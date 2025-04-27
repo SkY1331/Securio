@@ -9,26 +9,48 @@ const algorithms = [
 ];
 
 function EncryptForm() {
-  const [content, setContent] = useState('');
+  const [file, setFile] = useState(null);
   const [key, setKey] = useState('');
   const [algorithm, setAlgorithm] = useState('aes-256-cbc');
-  const [result, setResult] = useState('');
+  const [result, setResult] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
 
-  const handleFileDrop = (fileContent) => {
-    setContent(fileContent);
+  const handleFileDrop = (fileData) => {
+    setFile(fileData);
+    setResult(null);
+    setError('');
   };
 
   const handleEncrypt = async () => {
     try {
       setIsLoading(true);
       setError('');
-      const encrypted = await encrypt(content, key, algorithm);
-      setResult(encrypted);
+      
+      if (!file) {
+        throw new Error('Veuillez sélectionner un fichier');
+      }
+      
+      if (!key) {
+        throw new Error('Veuillez entrer une clé secrète');
+      }
+      
+      const encrypted = await encrypt(
+        file.content,
+        key,
+        algorithm,
+        file.type,
+        file.name
+      );
+      
+      setResult({
+        content: encrypted,
+        type: 'application/octet-stream',
+        name: `${file.name}.encrypted`
+      });
     } catch (error) {
       setError(`Erreur: ${error.message}`);
-      setResult('');
+      setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -38,11 +60,20 @@ function EncryptForm() {
     try {
       setIsLoading(true);
       setError('');
-      const decrypted = await decrypt(content, key, algorithm);
+      
+      if (!file) {
+        throw new Error('Veuillez sélectionner un fichier');
+      }
+      
+      if (!key) {
+        throw new Error('Veuillez entrer une clé secrète');
+      }
+      
+      const decrypted = await decrypt(file.content, key, algorithm);
       setResult(decrypted);
     } catch (error) {
       setError(`Erreur: ${error.message}`);
-      setResult('');
+      setResult(null);
     } finally {
       setIsLoading(false);
     }
@@ -51,11 +82,25 @@ function EncryptForm() {
   const handleSaveResult = () => {
     if (!result) return;
 
-    const blob = new Blob([result], { type: 'text/plain' });
+    let blob;
+    if (result.type.startsWith('text/')) {
+      blob = new Blob([result.content], { type: result.type });
+    } else if (result.type.startsWith('image/')) {
+      const base64Data = result.content.split(',')[1];
+      const binaryData = atob(base64Data);
+      const array = new Uint8Array(binaryData.length);
+      for (let i = 0; i < binaryData.length; i++) {
+        array[i] = binaryData.charCodeAt(i);
+      }
+      blob = new Blob([array], { type: result.type });
+    } else {
+      blob = new Blob([result.content], { type: result.type });
+    }
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'result.txt';
+    a.download = result.name;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
@@ -75,15 +120,19 @@ function EncryptForm() {
           <div className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
-                Contenu
+                Fichier
               </label>
               <FileDropZone onFileDrop={handleFileDrop} />
-              <textarea
-                value={content}
-                onChange={(e) => setContent(e.target.value)}
-                className="w-full h-32 p-2 border rounded-md mt-2 resize-none"
-                placeholder="Ou entrez le texte à chiffrer ou déchiffrer"
-              />
+              {file && (
+                <div className="mt-2 p-2 bg-gray-50 rounded-md">
+                  <p className="text-sm text-gray-600">
+                    Fichier sélectionné: {file.name}
+                  </p>
+                  <p className="text-xs text-gray-500">
+                    Type: {file.type}
+                  </p>
+                </div>
+              )}
             </div>
 
             <div>
@@ -119,9 +168,9 @@ function EncryptForm() {
             <div className="flex flex-row gap-2">
               <button
                 onClick={handleEncrypt}
-                disabled={isLoading}
+                disabled={isLoading || !file}
                 className={`flex-1 py-2 px-4 rounded-md text-white ${
-                  isLoading
+                  isLoading || !file
                     ? 'bg-blue-300 cursor-not-allowed'
                     : 'bg-blue-500 hover:bg-blue-600'
                 }`}
@@ -130,9 +179,9 @@ function EncryptForm() {
               </button>
               <button
                 onClick={handleDecrypt}
-                disabled={isLoading}
+                disabled={isLoading || !file}
                 className={`flex-1 py-2 px-4 rounded-md text-white ${
-                  isLoading
+                  isLoading || !file
                     ? 'bg-green-300 cursor-not-allowed'
                     : 'bg-green-500 hover:bg-green-600'
                 }`}
@@ -170,11 +219,31 @@ function EncryptForm() {
                 </button>
               )}
             </div>
-            <textarea
-              value={result}
-              readOnly
-              className="w-full h-[calc(100%-2rem)] p-2 border rounded-md bg-gray-50 resize-none"
-            />
+            <div className="w-full h-[calc(100%-2rem)] p-2 border rounded-md bg-gray-50">
+              {result && (
+                <div className="h-full flex flex-col">
+                  {result.type.startsWith('image/') ? (
+                    <img
+                      src={result.content}
+                      alt="Résultat"
+                      className="max-h-full max-w-full object-contain mx-auto"
+                    />
+                  ) : result.type.startsWith('text/') ? (
+                    <textarea
+                      value={result.content}
+                      readOnly
+                      className="w-full h-full p-2 bg-transparent resize-none"
+                    />
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <p className="text-gray-500">
+                        Fichier binaire - Utilisez le bouton "Sauvegarder" pour télécharger
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>

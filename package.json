@@ -1,9 +1,10 @@
 {
   "name": "securio",
-  "version": "1.0.0",
-  "description": "Une application sécurisée pour chiffrer et déchiffrer vos textes et fichiers",
-  "author": "SkY1331",
   "private": true,
+  "version": "1.1.0",
+  "type": "module",
+  "description": "Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles",
+  "author": "SkY1331",
   "main": "dist/main.js",
   "scripts": {
     "dev": "vite",

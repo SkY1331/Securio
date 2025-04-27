@@ -1,6 +1,6 @@
 import { useState, useCallback } from 'react';
 
-function FileDropZone({ onFileDrop, accept = '.txt' }) {
+function FileDropZone({ onFileDrop }) {
   const [isDragging, setIsDragging] = useState(false);
 
   const handleDragEnter = useCallback((e) => {
@@ -26,17 +26,25 @@ function FileDropZone({ onFileDrop, accept = '.txt' }) {
     setIsDragging(false);
 
     const files = Array.from(e.dataTransfer.files);
-    const validFiles = files.filter(file => file.name.endsWith('.txt'));
-
-    if (validFiles.length > 0) {
-      const file = validFiles[0];
+    if (files.length > 0) {
+      const file = files[0];
       const reader = new FileReader();
       
-      reader.onload = (event) => {
-        onFileDrop(event.target.result);
-      };
+      if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
+        reader.readAsText(file);
+      } else if (file.type.startsWith('image/')) {
+        reader.readAsDataURL(file);
+      } else {
+        reader.readAsArrayBuffer(file);
+      }
       
-      reader.readAsText(file);
+      reader.onload = (event) => {
+        onFileDrop({
+          content: event.target.result,
+          type: file.type,
+          name: file.name
+        });
+      };
     }
   }, [onFileDrop]);
 
@@ -70,20 +78,31 @@ function FileDropZone({ onFileDrop, accept = '.txt' }) {
         <p className="text-xs sm:text-sm text-gray-600">
           {isDragging
             ? 'Déposez le fichier ici'
-            : 'Glissez-déposez un fichier .txt ici ou cliquez pour sélectionner'}
+            : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
         </p>
         <input
           type="file"
-          accept={accept}
           className="hidden"
           onChange={(e) => {
             const file = e.target.files[0];
             if (file) {
               const reader = new FileReader();
+              
+              if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
+                reader.readAsText(file);
+              } else if (file.type.startsWith('image/')) {
+                reader.readAsDataURL(file);
+              } else {
+                reader.readAsArrayBuffer(file);
+              }
+              
               reader.onload = (event) => {
-                onFileDrop(event.target.result);
+                onFileDrop({
+                  content: event.target.result,
+                  type: file.type,
+                  name: file.name
+                });
               };
-              reader.readAsText(file);
             }
           }}
         />

@@ -57,8 +57,92 @@ async function deriveKey(password, salt, algorithm) {
   );
 }
 
-export async function encrypt(text, password, algorithm) {
+// Constantes pour le format de fichier
+const FILE_FORMAT_VERSION = 1;
+const HEADER_SIZE = 64; // Taille fixe de l'en-tête en octets
+
+// Structure de l'en-tête :
+// - 4 octets : version (uint32)
+// - 4 octets : type de fichier (uint32, index dans la liste des types)
+// - 32 octets : nom du fichier (utf8, padding avec des zéros)
+// - 4 octets : taille des données (uint32)
+// - 20 octets : réservé pour extensions futures
+
+const FILE_TYPES = {
+  'text/plain': 0,
+  'text/csv': 1,
+  'application/pdf': 2,
+  'image/jpeg': 3,
+  'image/png': 4,
+  'application/msword': 5,
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 6,
+  'application/vnd.ms-excel': 7,
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 8,
+  'application/octet-stream': 9
+};
+
+const FILE_TYPES_REVERSE = Object.fromEntries(
+  Object.entries(FILE_TYPES).map(([type, id]) => [id, type])
+);
+
+function createHeader(fileType, fileName, dataSize) {
+  const header = new Uint8Array(HEADER_SIZE);
+  const view = new DataView(header.buffer);
+  
+  // Version
+  view.setUint32(0, FILE_FORMAT_VERSION, true);
+  
+  // Type de fichier
+  const typeId = FILE_TYPES[fileType] || FILE_TYPES['application/octet-stream'];
+  view.setUint32(4, typeId, true);
+  
+  // Nom du fichier (UTF-8, max 32 octets)
+  const encoder = new TextEncoder();
+  const fileNameBytes = encoder.encode(fileName);
+  header.set(fileNameBytes, 8);
+  
+  // Taille des données
+  view.setUint32(40, dataSize, true);
+  
+  return header;
+}
+
+function parseHeader(header) {
+  const view = new DataView(header.buffer);
+  
+  // Vérifier la version
+  const version = view.getUint32(0, true);
+  if (version !== FILE_FORMAT_VERSION) {
+    throw new Error('Version de format non supportée');
+  }
+  
+  // Lire le type de fichier
+  const typeId = view.getUint32(4, true);
+  const fileType = FILE_TYPES_REVERSE[typeId] || 'application/octet-stream';
+  
+  // Lire le nom du fichier
+  const decoder = new TextDecoder();
+  const fileNameBytes = new Uint8Array(header.buffer, 8, 32);
+  const fileName = decoder.decode(fileNameBytes).replace(/\0+$/, '');
+  
+  // Lire la taille des données
+  const dataSize = view.getUint32(40, true);
+  
+  return { fileType, fileName, dataSize };
+}
+
+export async function encrypt(data, password, algorithm, fileType = 'application/octet-stream', fileName = 'file') {
   try {
+    // Vérifier que le mot de passe n'est pas vide
+    if (!password) {
+      throw new Error('La clé secrète ne peut pas être vide');
+    }
+    
+    // Vérifier que les données ne sont pas vides
+    if (!data) {
+      throw new Error('Les données à chiffrer ne peuvent pas être vides');
+    }
+    
     // Générer un IV aléatoire
     const iv = crypto.getRandomValues(new Uint8Array(16));
     
@@ -68,18 +152,39 @@ export async function encrypt(text, password, algorithm) {
     // Dériver la clé à partir du mot de passe
     const key = await deriveKey(password, ab2str(salt), algorithm);
     
-    // Chiffrer le texte
+    // Convertir les données en ArrayBuffer si nécessaire
+    let dataBuffer;
+    if (typeof data === 'string') {
+      dataBuffer = str2ab(data);
+    } else if (data instanceof ArrayBuffer) {
+      dataBuffer = data;
+    } else if (data instanceof Uint8Array) {
+      dataBuffer = data.buffer;
+    } else {
+      throw new Error('Type de données non supporté');
+    }
+    
+    // Chiffrer les données
     const encrypted = await crypto.subtle.encrypt(
       {
         name: 'AES-CBC',
         iv: iv
       },
       key,
-      str2ab(text)
+      dataBuffer
     );
     
-    // Combiner le sel, l'IV et le texte chiffré
-    return `${buf2hex(salt)}:${buf2hex(iv)}:${buf2hex(encrypted)}`;
+    // Créer l'en-tête
+    const header = createHeader(fileType, fileName, encrypted.byteLength);
+    
+    // Combiner l'en-tête, le sel, l'IV et les données chiffrées
+    const result = new Uint8Array(HEADER_SIZE + salt.length + iv.length + encrypted.byteLength);
+    result.set(header, 0);
+    result.set(new Uint8Array(salt), HEADER_SIZE);
+    result.set(new Uint8Array(iv), HEADER_SIZE + salt.length);
+    result.set(new Uint8Array(encrypted), HEADER_SIZE + salt.length + iv.length);
+    
+    return result.buffer;
   } catch (error) {
     throw new Error(`Erreur de chiffrement: ${error.message}`);
   }
@@ -87,18 +192,35 @@ export async function encrypt(text, password, algorithm) {
 
 export async function decrypt(encryptedData, password, algorithm) {
   try {
-    // Séparer le sel, l'IV et le texte chiffré
-    const [saltHex, ivHex, encryptedHex] = encryptedData.split(':');
+    if (!(encryptedData instanceof ArrayBuffer)) {
+      throw new Error('Format de données non supporté');
+    }
     
-    // Convertir les données hexadécimales en tableaux d'octets
-    const salt = hex2buf(saltHex);
-    const iv = hex2buf(ivHex);
-    const encrypted = hex2buf(encryptedHex);
+    const data = new Uint8Array(encryptedData);
+    
+    // Vérifier la taille minimale
+    if (data.length < HEADER_SIZE + 32) { // En-tête + sel + IV
+      throw new Error('Données chiffrées invalides');
+    }
+    
+    // Lire l'en-tête
+    const header = data.slice(0, HEADER_SIZE);
+    const { fileType, fileName, dataSize } = parseHeader(header);
+    
+    // Extraire le sel, l'IV et les données chiffrées
+    const salt = data.slice(HEADER_SIZE, HEADER_SIZE + 16);
+    const iv = data.slice(HEADER_SIZE + 16, HEADER_SIZE + 32);
+    const encrypted = data.slice(HEADER_SIZE + 32, HEADER_SIZE + 32 + dataSize);
+    
+    // Vérifier que le mot de passe n'est pas vide
+    if (!password) {
+      throw new Error('La clé secrète ne peut pas être vide');
+    }
     
     // Dériver la clé à partir du mot de passe
     const key = await deriveKey(password, ab2str(salt), algorithm);
     
-    // Déchiffrer le texte
+    // Déchiffrer les données
     const decrypted = await crypto.subtle.decrypt(
       {
         name: 'AES-CBC',
@@ -108,7 +230,11 @@ export async function decrypt(encryptedData, password, algorithm) {
       encrypted
     );
     
-    return ab2str(decrypted);
+    return {
+      content: decrypted,
+      type: fileType,
+      name: fileName
+    };
   } catch (error) {
     throw new Error(`Erreur de déchiffrement: ${error.message}`);
   }
