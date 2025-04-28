@@ -5,12 +5,7 @@ Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles.
 ## Fonctionnalités
 
 - 🔒 Chiffrement et déchiffrement de fichiers
-- 📁 Support de multiples types de fichiers :
-  - Documents (PDF, DOC, DOCX)
-  - Images (JPG, PNG)
-  - Feuilles de calcul (XLS, XLSX)
-  - Fichiers texte (TXT, CSV)
-  - Et plus encore...
+- 🚀 Chargement automatique des fichiers .encrypted
 - 🛡️ Algorithmes de chiffrement sécurisés :
   - AES-256-CBC
   - AES-192-CBC
@@ -36,16 +31,16 @@ Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles.
    - Le fichier chiffré sera sauvegardé avec l'extension `.encrypted`
 
 2. **Déchiffrement d'un fichier** :
-   - Glissez-déposez votre fichier `.encrypted`
+   - Glissez-déposez votre fichier `.encrypted` dans la zone prévue
+   - OU double-cliquez sur un fichier `.encrypted` pour l'ouvrir directement
    - Entrez la clé secrète utilisée pour le chiffrement
    - Cliquez sur "Déchiffrer"
-   - Le fichier sera restauré avec son type et nom d'origine
+   - Le fichier sera restauré avec son nom d'origine
 
 ## Format de fichier
 
 Les fichiers chiffrés utilisent un format personnalisé qui inclut :
 - Un en-tête contenant les métadonnées du fichier
-- Le type MIME original
 - Le nom du fichier original
 - Les données chiffrées
 

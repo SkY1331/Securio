@@ -5,10 +5,10 @@
   "type": "module",
   "description": "Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles",
   "author": "SkY1331",
-  "main": "dist/main.js",
+  "main": "dist/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && copy src\\main.js dist\\main.js",
+    "build": "vite build && copy src\\main.cjs dist\\main.cjs",
     "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
     "preview": "vite preview",
     "electron:build": "electron-builder --win --x64 --config.asar=false --config.win.target=portable --config.win.signAndEditExecutable=false"

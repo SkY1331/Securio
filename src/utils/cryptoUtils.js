@@ -69,16 +69,7 @@ const HEADER_SIZE = 64; // Taille fixe de l'en-tête en octets
 // - 20 octets : réservé pour extensions futures
 
 const FILE_TYPES = {
-  'text/plain': 0,
-  'text/csv': 1,
-  'application/pdf': 2,
-  'image/jpeg': 3,
-  'image/png': 4,
-  'application/msword': 5,
-  'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 6,
-  'application/vnd.ms-excel': 7,
-  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 8,
-  'application/octet-stream': 9
+  'application/octet-stream': 0
 };
 
 const FILE_TYPES_REVERSE = Object.fromEntries(
@@ -123,7 +114,10 @@ function parseHeader(header) {
   // Lire le nom du fichier
   const decoder = new TextDecoder();
   const fileNameBytes = new Uint8Array(header.buffer, 8, 32);
-  const fileName = decoder.decode(fileNameBytes).replace(/\0+$/, '');
+  let fileName = decoder.decode(fileNameBytes);
+  
+  // Supprimer tous les caractères nuls et espaces inutiles à la fin
+  fileName = fileName.replace(/[\0\s]+$/, '');
   
   // Lire la taille des données
   const dataSize = view.getUint32(40, true);

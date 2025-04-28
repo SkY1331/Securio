@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.2.1] - 2024-04-27
+
+### Added
+- Chargement automatique des fichiers .encrypted au démarrage de l'application
+- Support du double-clic sur les fichiers .encrypted
+- Intégration avec le système de fichiers pour l'ouverture directe des fichiers
+
+## [1.2.0] - 2024-04-27
+
+### Changed
+- Simplification du format de fichier
+- Suppression du support des types de fichiers spécifiques (images, documents, etc.)
+- Tous les fichiers sont maintenant traités comme des fichiers binaires
+- Interface utilisateur simplifiée
+
+### Fixed
+- Amélioration de la stabilité du traitement des fichiers
+- Optimisation des performances
+
 ## [1.1.0] - 2024-04-19
 
 ### Added

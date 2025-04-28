@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, ipcMain } from 'electron';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -26,6 +26,11 @@ function createWindow() {
     // En production, charger le fichier index.html
     win.loadFile(path.join(__dirname, '../dist/index.html'));
   }
+
+  // Gérer les arguments de ligne de commande
+  ipcMain.handle('get-args', () => {
+    return process.argv.slice(1);
+  });
 }
 
 app.whenReady().then(() => {
