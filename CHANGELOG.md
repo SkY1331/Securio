@@ -1,5 +1,24 @@
 # Changelog
 
+## [2.2.0] - 2026-11-23
+
+### Ajouté
+- **Clic droit dans l'Explorateur Windows** (installeur NSIS) : « Chiffrer avec Securio » sur les
+  fichiers et dossiers, « Déchiffrer avec Securio » sur les `.encrypted` ; les sélections
+  multiples sont regroupées dans la même fenêtre
+- **Plusieurs fichiers et dossiers** : chiffrement séparé (chaque fichier à côté de son original)
+  ou en une **archive chiffrée** (tar dans un v3, produite à la volée sans copie en clair),
+  extraction sûre (pas de liens, pas de sortie du dossier) ; déchiffrement par lot
+- **Aperçu sans trace** des images, textes et PDF (≤ 64 Mo), déchiffrés uniquement en mémoire
+- **Générateur de phrases de passe** : 6 mots parmi 4 096 mots français courants (72 bits)
+- **Suppression de l'original** après chiffrement : relecture complète du fichier chiffré, puis
+  écrasement et suppression définitive (avec confirmation)
+- **Conversion des fichiers v1/v2 au format v3**, avec remplacement sûr de l'ancien fichier
+
+### Modifié
+- Après un travail terminé, de nouveaux fichiers démarrent une nouvelle sélection
+- Interface réorganisée en composants (liste des éléments, clé, aperçu, résultats)
+
 ## [2.1.0] - 2026-11-23
 
 ### Sécurité

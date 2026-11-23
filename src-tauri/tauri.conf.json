@@ -23,7 +23,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; frame-src blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
       "devCsp": null,
       "freezePrototype": true
     }
@@ -45,7 +45,9 @@
     ],
     "fileAssociations": [
       {
-        "ext": ["encrypted"],
+        "ext": [
+          "encrypted"
+        ],
         "name": "Fichier Securio",
         "description": "Fichier chiffré par Securio",
         "role": "Editor",
@@ -53,8 +55,17 @@
       }
     ],
     "windows": {
-      "webviewInstallMode": { "type": "downloadBootstrapper" },
-      "nsis": { "installMode": "currentUser", "languages": ["French", "English"] }
+      "webviewInstallMode": {
+        "type": "downloadBootstrapper"
+      },
+      "nsis": {
+        "installMode": "currentUser",
+        "languages": [
+          "French",
+          "English"
+        ],
+        "installerHooks": "./windows/hooks.nsh"
+      }
     }
   }
 }

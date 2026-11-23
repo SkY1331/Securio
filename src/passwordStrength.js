@@ -41,3 +41,16 @@ export async function evaluatePassword(password, userInputs = []) {
     suggestions: r.feedback.suggestions,
   };
 }
+
+/** Vérifie une nouvelle clé avant usage ; lève une erreur explicite sinon. */
+export async function assertNewKey(key, confirm, contextNames) {
+  if (!key) throw new Error('Veuillez entrer une clé secrète.');
+  if (key !== confirm) throw new Error('Les deux clés saisies ne correspondent pas.');
+  const check = await evaluatePassword(key, contextNames);
+  if (check.score < MIN_SCORE) {
+    throw new Error(
+      `Clé trop facile à deviner (robustesse : ${check.label.toLowerCase()}). ${check.warning ? `${check.warning} ` : ''}` +
+        'Utilisez par exemple une phrase de passe de 4 mots ou plus (bouton « Générer »), sans lien avec vous ni avec le fichier.'
+    );
+  }
+}

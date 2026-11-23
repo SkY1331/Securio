@@ -22,7 +22,7 @@ export default [
     },
   },
   {
-    files: ['test/**/*.mjs', '*.config.js'],
+    files: ['test/**/*.mjs', 'tools/**/*.mjs', '*.config.js'],
     languageOptions: { sourceType: 'module', globals: { ...globals.node } },
   },
 ];
