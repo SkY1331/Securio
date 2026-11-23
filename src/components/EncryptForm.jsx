@@ -7,11 +7,13 @@ import {
   inspectFile,
   launchFiles,
   onOpenFile,
+  onSessionExpired,
   openEncrypted,
   pickSavePath,
   saveDecrypted,
   siblingPath,
 } from '../api';
+import { MIN_SCORE, evaluatePassword } from '../passwordStrength';
 
 const LEGACY_ALGORITHMS = [
   { value: 'auto', label: 'Détection automatique (recommandé)' },
@@ -47,6 +49,7 @@ function EncryptForm() {
   const [opened, setOpened] = useState(null); // résultat de open_encrypted
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
+  const [strength, setStrength] = useState(null); // { forKey, score, label, warning, suggestions }
 
   const format = file?.inspection?.format;
   const mode = format && format !== 'future' && !forceEncrypt ? 'decrypt' : 'encrypt';
@@ -67,6 +70,7 @@ function EncryptForm() {
     setOpened(null);
     setForceEncrypt(false);
     setConfirmKey('');
+    setStrength(null);
     setProgress(null);
     setNotice('');
     setError(failure);
@@ -90,6 +94,39 @@ function EncryptForm() {
     };
   }, [loadPath]);
 
+  // Le cœur Rust efface le contenu déchiffré / la clé après 5 min d'inactivité
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten;
+    // Émis seulement si une session existait
+    onSessionExpired(() => {
+      setOpened(null);
+      setNotice("Par sécurité, le contenu déchiffré a été effacé de la mémoire après 5 minutes d'inactivité.");
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, []);
+
+  // Robustesse de la clé (chiffrement uniquement), calculée après une courte pause de frappe
+  useEffect(() => {
+    if (mode !== 'encrypt' || !key) return undefined;
+    let cancelled = false;
+    const timer = setTimeout(async () => {
+      const result = await evaluatePassword(key, [file?.name]);
+      if (!cancelled) setStrength({ forKey: key, ...result });
+    }, 150);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [key, mode, file]);
+  const keyStrength = mode === 'encrypt' && strength?.forKey === key ? strength : null;
+
   const run = async (label, fn) => {
     setError('');
     setNotice('');
@@ -107,12 +144,20 @@ function EncryptForm() {
   const handleEncrypt = () =>
     run('Chiffrement…', async () => {
       if (key !== confirmKey) throw new Error('Les deux clés saisies ne correspondent pas.');
+      const check = await evaluatePassword(key, [file.name]);
+      if (check.score < MIN_SCORE) {
+        throw new Error(
+          `Clé trop facile à deviner (robustesse : ${check.label.toLowerCase()}). ${check.warning ? `${check.warning} ` : ''}` +
+            'Utilisez par exemple une phrase de passe de 4 mots ou plus, sans lien avec vous ni avec le fichier.'
+        );
+      }
       const output = await pickSavePath(`${file.path}${ENCRYPTED_EXTENSION}`, 'Enregistrer le fichier chiffré');
       if (!output) return;
       setProgress({ done: 0, total: file.size });
       await encryptFile(file.path, output, key, (done) => setProgress({ done, total: file.size }));
       setKey('');
       setConfirmKey('');
+      setStrength(null);
       setNotice(`Fichier chiffré enregistré : ${output}`);
     });
 
@@ -120,6 +165,7 @@ function EncryptForm() {
     run('Vérification de la clé…', async () => {
       setOpened(null);
       setOpened(await openEncrypted(file.path, key, legacyAlgorithm));
+      setKey(''); // la clé n'est plus utile côté interface : le cœur Rust a ouvert la session
     });
 
   const handleSave = (index) =>
@@ -139,7 +185,6 @@ function EncryptForm() {
     return mode === 'encrypt' ? handleEncrypt() : handleDecrypt();
   };
 
-  const weakKey = mode === 'encrypt' && key.length > 0 && key.length < 10;
   const percent = progress?.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : null;
 
   return (
@@ -197,10 +242,29 @@ function EncryptForm() {
                 {showKey ? 'Masquer' : 'Afficher'}
               </button>
             </div>
-            {weakKey && (
-              <p className="mt-1 text-xs text-amber-700">
-                Clé courte : préférez au moins 10 caractères (ou une phrase de passe).
-              </p>
+            {keyStrength && (
+              <div className="mt-2 text-xs" aria-live="polite">
+                <div className="flex items-center gap-2">
+                  <meter
+                    className="w-40 h-2"
+                    min={0}
+                    max={5}
+                    low={2.5}
+                    high={3.5}
+                    optimum={5}
+                    value={keyStrength.score + 1}
+                  />
+                  <span className={keyStrength.score < MIN_SCORE ? 'text-red-600' : 'text-gray-600'}>
+                    Robustesse : {keyStrength.label}
+                    {keyStrength.score < MIN_SCORE && ' — insuffisante pour chiffrer'}
+                  </span>
+                </div>
+                {keyStrength.score < 3 && (keyStrength.warning || keyStrength.suggestions.length > 0) && (
+                  <p className="mt-1 text-amber-700">
+                    {[keyStrength.warning, ...keyStrength.suggestions].filter(Boolean).join(' ')}
+                  </p>
+                )}
+              </div>
             )}
           </div>
 

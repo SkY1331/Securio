@@ -7,11 +7,13 @@ Cœur cryptographique en **Rust**, interface **Tauri** (React).
 
 - 🔒 Chiffrement authentifié **AES-256-GCM**, découpé en segments : toute modification,
   troncature ou réorganisation du fichier chiffré est détectée
-- 🔑 Dérivation de clé **Argon2id** (64 Mio, 3 passes, 4 voies — RFC 9106), résistante aux
-  attaques par carte graphique
+- 🔑 Dérivation de clé **Argon2id** (256 Mio, 3 passes, 4 voies), résistante aux attaques par
+  carte graphique ; robustesse de la clé évaluée (dictionnaires français et anglais) et clés trop
+  faibles refusées
 - 📦 **Fichiers de toute taille** : traitement en flux, la mémoire utilisée ne dépend pas de la
   taille du fichier
-- 🕶️ Nom et type du fichier d'origine **chiffrés** (et longueur du nom masquée)
+- 🕶️ Nom et type du fichier d'origine **chiffrés** (et longueur du nom masquée) ; noms piégés
+  (caractères invisibles, inversion du sens de lecture) neutralisés, alerte sur les programmes
 - ♻️ **Rétro-compatible** : les fichiers de Securio 1.0 → 1.3 s'ouvrent toujours
 - 🚀 Ouverture directe des `.encrypted` (double-clic) ; une seule fenêtre à la fois
 - 🪶 Exécutable d'environ 10 Mo (contre ~110 Mo avec Electron)
@@ -29,6 +31,14 @@ Téléchargez la dernière version depuis la [page des releases](https://github.
 
 Securio utilise WebView2, déjà présent sur Windows 10 et 11 (l'installeur le télécharge si besoin).
 
+**Vérifier l'authenticité d'un téléchargement** : chaque release contient `SHA256SUMS.txt`
+(empreintes à comparer avec `Get-FileHash fichier.exe -Algorithm SHA256` dans PowerShell) et une
+attestation de provenance GitHub prouvant que l'exécutable a été compilé par la CI depuis ce dépôt :
+
+```bash
+gh attestation verify Securio-2.1.0-portable.exe --repo SkY1331/Securio
+```
+
 ## Utilisation
 
 1. **Chiffrer** : glissez-déposez un fichier (ou cliquez sur la zone), saisissez la clé deux fois
@@ -39,7 +49,12 @@ Securio utilise WebView2, déjà présent sur Windows 10 et 11 (l'installeur le 
 
 Le mode (chiffrer / déchiffrer) est choisi automatiquement selon le fichier. En cas d'erreur
 (clé incorrecte, fichier altéré, disque plein…), aucun fichier partiel n'est laissé : le résultat
-est écrit dans un fichier temporaire, renommé seulement en cas de succès.
+est écrit dans un fichier temporaire, renommé seulement en cas de succès — et si l'application est
+interrompue en plein travail, le temporaire est supprimé à son démarrage suivant.
+
+⚠️ Après chiffrement, **le fichier d'origine reste sur le disque** : supprimez-le vous-même si
+nécessaire (sur SSD, un fichier supprimé peut rester récupérable : chiffrez de préférence vos
+documents dès leur création, ou travaillez sur un disque chiffré type BitLocker).
 
 ### Anciens fichiers
 
@@ -70,7 +85,7 @@ contenu brut :
 |---|---|---|
 | 0 | 7 | Magie `SECURIO` |
 | 7 | 1 | Version (`3`) |
-| 8 | 1 | KDF (`2` = Argon2id v1.3) |
+| 8 | 1 | KDF (`2` = Argon2id v1.3 ; 256 Mio / t=3 / p=4 par défaut depuis 2.1, 64 Mio en 2.0) |
 | 9 | 4 | Argon2 mémoire en Kio (u32 LE) |
 | 13 | 4 | Argon2 passes (u32 LE) |
 | 17 | 1 | Argon2 parallélisme |
@@ -108,10 +123,15 @@ Détails : [`crates/securio-core/src/v1.rs`](crates/securio-core/src/v1.rs).
 
 - Toute la cryptographie est en Rust ([RustCrypto](https://github.com/RustCrypto)) ; l'interface
   ne voit jamais le contenu des fichiers, seulement leurs chemins
-- Clés et contenus déchiffrés effacés de la mémoire après usage (`zeroize`)
+- Clés, mots de passe et contenus déchiffrés effacés de la mémoire après usage (`zeroize`) ; la
+  clé n'est plus conservée par l'interface une fois le fichier ouvert ; session effacée après
+  5 minutes d'inactivité
 - Interface Tauri : CSP stricte, prototypes JavaScript gelés, permissions limitées aux boîtes de
   dialogue Ouvrir/Enregistrer, aucun accès réseau
-- Paramètres d'en-tête bornés : un fichier forgé ne peut pas imposer une dérivation de clé démesurée
+- Paramètres d'en-tête bornés (≤ 1 Gio, ≤ 10 passes) : un fichier forgé ne peut pas bloquer
+  l'application
+- Chaîne de compilation : permissions minimales, actions épinglées par empreinte, aucun script
+  d'installation npm exécuté, audit RustSec/npm, empreintes SHA-256 et attestation de provenance
 - Limite du format v1 : AES-CBC non authentifié, une altération n'y est pas détectable
 
 ## Développement

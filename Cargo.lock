@@ -3265,7 +3265,7 @@ checksum = "94143f37725109f92c262ed2cf5e59bce7498c01bcc1502d7b9afe439a4e9f49"
 
 [[package]]
 name = "securio"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "getrandom 0.2.17",
  "securio-core",
@@ -3275,11 +3275,12 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-single-instance",
+ "zeroize",
 ]
 
 [[package]]
 name = "securio-core"
-version = "2.0.0"
+version = "2.1.0"
 dependencies = [
  "aes",
  "aes-gcm",
