@@ -1,53 +1,71 @@
 {
   "name": "securio",
   "private": true,
-  "version": "1.1.0",
+  "version": "1.3.0",
   "type": "module",
   "description": "Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles",
   "author": "SkY1331",
-  "main": "dist/main.cjs",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && copy src\\main.cjs dist\\main.cjs",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "electron:dev": "electron . --dev",
+    "build": "vite build",
     "preview": "vite preview",
-    "electron:build": "electron-builder --win --x64 --config.asar=false --config.win.target=portable --config.win.signAndEditExecutable=false"
+    "test": "node --test test/crypto.test.mjs",
+    "lint": "eslint .",
+    "electron:build": "npm run build && electron-builder --win portable --x64",
+    "electron:build:installer": "npm run build && electron-builder --win nsis --x64"
   },
   "build": {
     "appId": "com.securio.app",
     "productName": "Securio",
     "files": [
-      "dist/**/*"
+      "dist/**/*",
+      "electron/**/*",
+      "package.json"
     ],
     "directories": {
       "output": "release"
     },
+    "asar": true,
+    "fileAssociations": [
+      {
+        "ext": "encrypted",
+        "name": "Fichier Securio",
+        "description": "Fichier chiffré par Securio",
+        "role": "Editor",
+        "icon": "public/icon.ico"
+      }
+    ],
     "win": {
-      "target": "portable",
       "icon": "public/icon.ico",
       "signAndEditExecutable": false
     },
-    "asar": false
+    "portable": {
+      "artifactName": "Securio-${version}-portable.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "Securio-${version}-setup.exe"
+    }
   },
-  "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.17",
-    "electron": "^28.1.0",
-    "electron-builder": "^24.9.1",
-    "eslint": "^8.55.0",
-    "eslint-plugin-react": "^7.33.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.5",
-    "postcss": "^8.4.33",
-    "tailwindcss": "^3.4.1",
-    "vite": "^5.0.8",
-    "vite-plugin-electron": "^0.15.6",
-    "vite-plugin-electron-renderer": "^0.14.5"
+    "@eslint/js": "^9.39.5",
+    "@vitejs/plugin-react": "^6.3.0",
+    "autoprefixer": "^10.7.0",
+    "electron": "^45.4.1",
+    "electron-builder": "^26.18.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
+    "postcss": "^8.5.33",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.3.8"
   }
 }

@@ -1,64 +1,59 @@
-import { useState, useCallback } from 'react';
+import { useState, useCallback, useId } from 'react';
 
-function FileDropZone({ onFileDrop }) {
+// Lit TOUJOURS le fichier en binaire (ArrayBuffer).
+// Les versions ≤ 1.2.1 lisaient les images en data-URL et les .txt en texte,
+// ce qui altérait le contenu chiffré (voir src/utils/legacyV1.js).
+async function readFile(file) {
+  const buffer = await file.arrayBuffer();
+  return {
+    content: new Uint8Array(buffer),
+    type: file.type || 'application/octet-stream',
+    name: file.name,
+  };
+}
+
+function FileDropZone({ onFileDrop, onError }) {
   const [isDragging, setIsDragging] = useState(false);
+  const inputId = useId();
 
-  const handleDragEnter = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const file = files[0];
-      const reader = new FileReader();
-      
-      if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
-        reader.readAsText(file);
-      } else if (file.type.startsWith('image/')) {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsArrayBuffer(file);
+  const handleFiles = useCallback(
+    async (fileList) => {
+      const file = fileList?.[0];
+      if (!file) return;
+      try {
+        onFileDrop(await readFile(file));
+      } catch (e) {
+        onError?.(`Impossible de lire le fichier : ${e.message}`);
       }
-      
-      reader.onload = (event) => {
-        onFileDrop({
-          content: event.target.result,
-          type: file.type,
-          name: file.name
-        });
-      };
-    }
-  }, [onFileDrop]);
+    },
+    [onFileDrop, onError]
+  );
+
+  const stop = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
 
   return (
-    <div
-      className={`border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors ${
-        isDragging
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-300 hover:border-gray-400'
+    <label
+      htmlFor={inputId}
+      className={`block cursor-pointer border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors ${
+        isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
       }`}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
+      onDragEnter={(e) => {
+        stop(e);
+        setIsDragging(true);
+      }}
+      onDragLeave={(e) => {
+        stop(e);
+        setIsDragging(false);
+      }}
+      onDragOver={stop}
+      onDrop={(e) => {
+        stop(e);
+        setIsDragging(false);
+        handleFiles(e.dataTransfer.files);
+      }}
     >
       <div className="flex flex-col items-center justify-center space-y-2">
         <svg
@@ -67,6 +62,7 @@ function FileDropZone({ onFileDrop }) {
           stroke="currentColor"
           viewBox="0 0 24 24"
           xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -76,39 +72,20 @@ function FileDropZone({ onFileDrop }) {
           />
         </svg>
         <p className="text-xs sm:text-sm text-gray-600">
-          {isDragging
-            ? 'Déposez le fichier ici'
-            : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
+          {isDragging ? 'Déposez le fichier ici' : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
         </p>
         <input
+          id={inputId}
           type="file"
           className="hidden"
           onChange={(e) => {
-            const file = e.target.files[0];
-            if (file) {
-              const reader = new FileReader();
-              
-              if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
-                reader.readAsText(file);
-              } else if (file.type.startsWith('image/')) {
-                reader.readAsDataURL(file);
-              } else {
-                reader.readAsArrayBuffer(file);
-              }
-              
-              reader.onload = (event) => {
-                onFileDrop({
-                  content: event.target.result,
-                  type: file.type,
-                  name: file.name
-                });
-              };
-            }
+            handleFiles(e.target.files);
+            e.target.value = ''; // permet de re-sélectionner le même fichier
           }}
         />
       </div>
-    </div>
+    </label>
   );
 }
 
-export default FileDropZone; 
+export default FileDropZone;

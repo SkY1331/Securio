@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.3.0] - 2026-11-23
+
+### Sécurité
+- Nouveau format de fichier **v2** : chiffrement authentifié AES-256-GCM (l'ancien AES-CBC ne
+  détectait ni les altérations ni, de façon fiable, une mauvaise clé)
+- Dérivation de clé PBKDF2-HMAC-SHA256 portée à 600 000 itérations (recommandation OWASP),
+  paramètres enregistrés dans le fichier pour pouvoir évoluer
+- Nom et type du fichier d'origine désormais chiffrés (ils étaient en clair dans l'en-tête)
+- Mot de passe encodé en UTF-8 (NFC) : les caractères non latins ne sont plus tronqués
+- Electron : `contextIsolation`, `sandbox`, `nodeIntegration` désactivé, preload minimal,
+  CSP stricte, navigation et nouvelles fenêtres bloquées
+- Electron 28 (plus maintenu) → 45 ; dépendances mises à jour (React 19, Vite 8)
+
+### Rétro-compatibilité
+- Les fichiers v1 (Securio 1.0 → 1.2.1) restent lisibles ; l'algorithme AES-128/192/256-CBC
+  est détecté automatiquement
+- Réparation des fichiers v1 abîmés par l'ancienne interface : images stockées en data-URL,
+  textes stockés en Latin-1 tronqué, noms tronqués à 32 octets (le contenu brut reste disponible)
+- Fichiers témoins générés avec le code d'origine + tests automatisés (`npm test`)
+
+### Corrigé
+- Les images et fichiers texte étaient altérés avant chiffrement (lecture en data-URL / texte) :
+  tous les fichiers sont désormais lus en binaire
+- L'ouverture d'un `.encrypted` par double-clic ne fonctionnait pas (IPC incohérent, script
+  principal sans gestion des arguments) ; ajout de l'instance unique et de l'association de fichier
+  (installeur NSIS)
+- Le clic sur la zone de dépôt n'ouvrait pas le sélecteur de fichiers
+- Numéro de version incohérent (package.json 1.1.0 / interface 1.2.1)
+- Script de build dépendant de la commande Windows `copy` ; configuration ESLint manquante
+
+### Modifié
+- Mode chiffrer/déchiffrer choisi automatiquement selon le fichier
+- Confirmation de la clé au chiffrement, bouton afficher/masquer, alerte clé courte
+- Boîte « Enregistrer sous » native dans l'application
+- Application empaquetée en archive asar, sans node_modules (React est inclus dans le bundle Vite)
+
 ## [1.2.1] - 2024-04-27
 
 ### Added
