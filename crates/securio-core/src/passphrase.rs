@@ -37,9 +37,9 @@ pub fn generate(n: usize) -> Result<Zeroizing<String>> {
     getrandom::getrandom(&mut random)
         .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
     let mut out = Zeroizing::new(String::new());
-    for (i, pair) in random.chunks_exact(2).enumerate() {
+    for i in 0..n {
         // 4 096 = 2^12 : le masque donne un tirage parfaitement uniforme
-        let index = (u16::from_le_bytes([pair[0], pair[1]]) & 0x0FFF) as usize;
+        let index = (u16::from_le_bytes([random[2 * i], random[2 * i + 1]]) & 0x0FFF) as usize;
         if i > 0 {
             out.push('-');
         }
