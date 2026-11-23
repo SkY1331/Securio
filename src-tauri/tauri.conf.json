@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Securio",
+  "version": "../package.json",
+  "identifier": "com.securio.app",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Securio",
+        "width": 900,
+        "height": 800,
+        "minWidth": 520,
+        "minHeight": 560,
+        "dragDropEnabled": true
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src ipc: http://ipc.localhost; object-src 'none'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+      "devCsp": null,
+      "freezePrototype": true
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "publisher": "SkY1331",
+    "copyright": "© SkY1331 — licence MIT",
+    "category": "Utility",
+    "shortDescription": "Chiffrement de fichiers local",
+    "longDescription": "Securio chiffre et déchiffre vos fichiers localement (Argon2id + AES-256-GCM).",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "fileAssociations": [
+      {
+        "ext": ["encrypted"],
+        "name": "Fichier Securio",
+        "description": "Fichier chiffré par Securio",
+        "role": "Editor",
+        "mimeType": "application/x-securio"
+      }
+    ],
+    "windows": {
+      "webviewInstallMode": { "type": "downloadBootstrapper" },
+      "nsis": { "installMode": "currentUser", "languages": ["French", "English"] }
+    }
+  }
+}

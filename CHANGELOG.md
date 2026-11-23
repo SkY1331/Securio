@@ -1,5 +1,33 @@
 # Changelog
 
+## [2.0.0] - 2026-11-23
+
+### Architecture
+- Migration d'Electron vers **Tauri 2** : exécutable d'environ 10 Mo (au lieu de ~110 Mo),
+  WebView2 du système, plus de Node.js ni de Chromium embarqués
+- Toute la cryptographie passe en **Rust** (crate `securio-core`, bibliothèques RustCrypto) ;
+  l'interface React ne manipule plus que des chemins de fichiers
+- Installeurs NSIS et MSI avec association de l'extension `.encrypted`, exécutable portable ;
+  compilation et tests automatiques sur GitHub Actions
+
+### Nouveau format v3
+- Dérivation de clé **Argon2id** (64 Mio, t = 3, p = 4), paramètres enregistrés dans le fichier
+- **AES-256-GCM par segments de 1 Mio** (construction STREAM) : fichiers de toute taille traités
+  en flux ; altération, troncature et réorganisation détectées
+- Métadonnées chiffrées et complétées à 256 octets (la longueur du nom ne fuit plus)
+- Paramètres d'en-tête bornés contre les fichiers forgés
+
+### Rétro-compatibilité
+- Lecture des formats v1 (≤ 1.2.1) et v2 (1.3) réimplémentée en Rust et vérifiée sur les mêmes
+  fichiers témoins que la 1.3 (y compris les réparations d'images, de textes et de noms)
+- Détection automatique de l'algorithme v1 trois fois plus rapide (une seule dérivation PBKDF2)
+- Ajout de fichiers témoins v3
+
+### Divers
+- Écriture atomique : aucun fichier partiel en cas d'erreur (clé incorrecte, altération, disque plein)
+- Clés et contenus déchiffrés effacés de la mémoire (`zeroize`)
+- Barre de progression ; instance unique (un double-clic ouvre le fichier dans la fenêtre existante)
+
 ## [1.3.0] - 2026-11-23
 
 ### Sécurité

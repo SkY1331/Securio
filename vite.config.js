@@ -4,40 +4,26 @@ import { readFileSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8'));
 
-// Politique de sécurité du contenu, injectée uniquement dans le build de production
-// (le serveur de dev de Vite a besoin de scripts inline pour le rechargement à chaud).
-const CSP = [
-  "default-src 'self'",
-  "script-src 'self'",
-  "style-src 'self'",
-  "img-src 'self' data: blob:",
-  "connect-src 'self'",
-  "object-src 'none'",
-  "base-uri 'none'",
-  "form-action 'none'",
-].join('; ');
-
-const cspPlugin = {
-  name: 'securio-csp',
-  apply: 'build',
-  transformIndexHtml: () => [
-    { tag: 'meta', attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP }, injectTo: 'head' },
-  ],
-};
-
+// La politique de sécurité du contenu (CSP) est définie dans src-tauri/tauri.conf.json :
+// Tauri l'applique et y ajoute les empreintes de ses propres scripts.
 export default defineConfig({
-  plugins: [react(), cspPlugin],
+  plugins: [react()],
   base: './',
+  clearScreen: false,
   define: {
     __APP_VERSION__: JSON.stringify(pkg.version),
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    watch: {
+      usePolling: true,
+      ignored: ['**/src-tauri/**', '**/target/**'],
+    },
   },
   build: {
     outDir: 'dist',
     emptyOutDir: true,
-  },
-  server: {
-    watch: {
-      usePolling: true,
-    },
+    target: 'es2021',
   },
 });

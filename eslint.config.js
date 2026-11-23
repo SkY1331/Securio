@@ -4,7 +4,7 @@ import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 
 export default [
-  { ignores: ['dist', 'release', 'node_modules', 'test/legacy/cryptoUtils.v1.original.js'] },
+  { ignores: ['dist', 'release', 'node_modules', 'target', 'src-tauri', 'test/legacy/cryptoUtils.v1.original.js'] },
   js.configs.recommended,
   {
     files: ['src/**/*.{js,jsx}'],
@@ -20,10 +20,6 @@ export default [
       'react-refresh/only-export-components': ['warn', { allowConstantExport: true }],
       'no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
-  },
-  {
-    files: ['electron/**/*.cjs'],
-    languageOptions: { sourceType: 'commonjs', globals: { ...globals.node } },
   },
   {
     files: ['test/**/*.mjs', '*.config.js'],

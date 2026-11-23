@@ -1,6 +1,17 @@
-import { useState, useMemo, useCallback } from 'react';
-import { encryptFile, decryptFile, inspectFile, ENCRYPTED_EXTENSION } from '../utils/cryptoUtils';
+import { useCallback, useEffect, useState } from 'react';
 import FileDropZone from './FileDropZone';
+import {
+  ENCRYPTED_EXTENSION,
+  closeSession,
+  encryptFile,
+  inspectFile,
+  launchFiles,
+  onOpenFile,
+  openEncrypted,
+  pickSavePath,
+  saveDecrypted,
+  siblingPath,
+} from '../api';
 
 const LEGACY_ALGORITHMS = [
   { value: 'auto', label: 'Détection automatique (recommandé)' },
@@ -9,107 +20,127 @@ const LEGACY_ALGORITHMS = [
   { value: 'aes-128-cbc', label: 'AES-128-CBC' },
 ];
 
+const FORMAT_LABELS = {
+  v3: { text: 'Fichier Securio (format v3 : Argon2id + AES-256-GCM).', color: 'text-green-700' },
+  v2: { text: 'Fichier Securio 1.3 (format v2, AES-256-GCM).', color: 'text-green-700' },
+  v1: { text: 'Fichier Securio ancien format (v1, ≤ 1.2.1) : lu en mode compatibilité.', color: 'text-amber-700' },
+};
+
 function formatSize(bytes) {
   if (bytes < 1024) return `${bytes} o`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} Ko`;
-  return `${(bytes / 1024 / 1024).toFixed(1)} Mo`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} Ko`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} Mo`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} Go`;
 }
 
-async function saveBytes(name, content, type) {
-  if (window.securio?.saveFile) {
-    return window.securio.saveFile(name, content);
-  }
-  // Navigateur (npm run dev) : téléchargement classique
-  const blob = new Blob([content], { type: type || 'application/octet-stream' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-  return name;
-}
+const message = (e) => (typeof e === 'string' ? e : e?.message || String(e));
 
-function EncryptForm({ initialFile }) {
-  const [file, setFile] = useState(null);
+function EncryptForm() {
+  const [file, setFile] = useState(null); // { path, name, size, inspection }
   const [key, setKey] = useState('');
   const [confirmKey, setConfirmKey] = useState('');
   const [showKey, setShowKey] = useState(false);
   const [legacyAlgorithm, setLegacyAlgorithm] = useState('auto');
   const [forceEncrypt, setForceEncrypt] = useState(false);
-  const [result, setResult] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [busy, setBusy] = useState(null); // libellé de l'opération en cours
+  const [progress, setProgress] = useState(null); // { done, total }
+  const [opened, setOpened] = useState(null); // résultat de open_encrypted
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
 
-  const info = useMemo(() => (file ? inspectFile(file.content) : null), [file]);
-  const mode = info && !forceEncrypt ? 'decrypt' : 'encrypt';
+  const format = file?.inspection?.format;
+  const mode = format && format !== 'future' && !forceEncrypt ? 'decrypt' : 'encrypt';
 
-  const loadFile = useCallback((fileData) => {
-    setFile(fileData);
-    setResult(null);
-    setError('');
-    setNotice('');
+  const loadPath = useCallback(async (path) => {
+    let summary = null;
+    let failure = '';
+    try {
+      summary = await inspectFile(path);
+      if (summary.inspection?.format === 'future') {
+        failure = `Ce fichier utilise le format v${summary.inspection.version}, créé par une version plus récente de Securio. Mettez l'application à jour.`;
+      }
+    } catch (e) {
+      failure = message(e);
+    }
+    await closeSession().catch(() => {});
+    setFile(summary);
+    setOpened(null);
     setForceEncrypt(false);
     setConfirmKey('');
+    setProgress(null);
+    setNotice('');
+    setError(failure);
   }, []);
 
-  // Fichier reçu depuis le système (double-clic sur un .encrypted)
-  const [lastInitialFile, setLastInitialFile] = useState(null);
-  if (initialFile && initialFile !== lastInitialFile) {
-    setLastInitialFile(initialFile);
-    loadFile(initialFile);
-  }
+  // Fichiers ouverts depuis le système : au lancement (double-clic, « Ouvrir avec »)
+  // ou pendant que l'application tourne (transmis par l'instance unique).
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten;
+    launchFiles()
+      .then((files) => !cancelled && files?.length && loadPath(files[0]))
+      .catch((e) => console.error(e));
+    onOpenFile((path) => loadPath(path)).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [loadPath]);
 
-  const handleSubmit = async (e) => {
-    e.preventDefault();
+  const run = async (label, fn) => {
     setError('');
     setNotice('');
-    setResult(null);
-
-    if (!file) return setError('Veuillez sélectionner un fichier.');
-    if (!key) return setError('Veuillez entrer une clé secrète.');
-    if (mode === 'encrypt' && key !== confirmKey) {
-      return setError('Les deux clés saisies ne correspondent pas.');
-    }
-
-    setIsLoading(true);
+    setBusy(label);
     try {
-      if (mode === 'encrypt') {
-        const encrypted = await encryptFile(file.content, key, { name: file.name, type: file.type });
-        setResult({
-          content: encrypted,
-          type: 'application/octet-stream',
-          name: `${file.name}${ENCRYPTED_EXTENSION}`,
-          warnings: [],
-          alternatives: [],
-        });
-      } else {
-        const decrypted = await decryptFile(file.content, key, {
-          algorithm: legacyAlgorithm,
-          outerName: file.name,
-        });
-        setResult(decrypted);
-      }
-    } catch (err) {
-      setError(err.message);
+      await fn();
+    } catch (e) {
+      setError(message(e));
     } finally {
-      setIsLoading(false);
+      setBusy(null);
+      setProgress(null);
     }
   };
 
-  const handleSave = async (item) => {
-    try {
-      const saved = await saveBytes(item.name, item.content, item.type);
-      if (saved) setNotice(`Enregistré : ${saved}`);
-    } catch (err) {
-      setError(`Enregistrement impossible : ${err.message}`);
-    }
+  const handleEncrypt = () =>
+    run('Chiffrement…', async () => {
+      if (key !== confirmKey) throw new Error('Les deux clés saisies ne correspondent pas.');
+      const output = await pickSavePath(`${file.path}${ENCRYPTED_EXTENSION}`, 'Enregistrer le fichier chiffré');
+      if (!output) return;
+      setProgress({ done: 0, total: file.size });
+      await encryptFile(file.path, output, key, (done) => setProgress({ done, total: file.size }));
+      setKey('');
+      setConfirmKey('');
+      setNotice(`Fichier chiffré enregistré : ${output}`);
+    });
+
+  const handleDecrypt = () =>
+    run('Vérification de la clé…', async () => {
+      setOpened(null);
+      setOpened(await openEncrypted(file.path, key, legacyAlgorithm));
+    });
+
+  const handleSave = (index) =>
+    run('Déchiffrement…', async () => {
+      const variant = opened.variants[index];
+      const output = await pickSavePath(await siblingPath(file.path, variant.name), 'Enregistrer le fichier déchiffré');
+      if (!output) return;
+      setProgress({ done: 0, total: variant.size });
+      await saveDecrypted(opened.session, index, output, (done) => setProgress({ done, total: variant.size }));
+      setNotice(`Fichier déchiffré enregistré : ${output}`);
+    });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!file) return setError('Veuillez sélectionner un fichier.');
+    if (!key) return setError('Veuillez entrer une clé secrète.');
+    return mode === 'encrypt' ? handleEncrypt() : handleDecrypt();
   };
 
   const weakKey = mode === 'encrypt' && key.length > 0 && key.length < 10;
+  const percent = progress?.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : null;
 
   return (
     <div className="max-w-4xl mx-auto p-4">
@@ -119,27 +150,22 @@ function EncryptForm({ initialFile }) {
         <div className="space-y-6">
           <div>
             <span className="block text-sm font-medium text-gray-700 mb-2">Fichier à traiter</span>
-            <FileDropZone onFileDrop={loadFile} onError={setError} />
+            <FileDropZone onFile={loadPath} disabled={!!busy} />
             {file && (
               <div className="mt-2 text-sm text-gray-600 space-y-1">
-                <div>
-                  Fichier sélectionné : <strong>{file.name}</strong> ({formatSize(file.content.length)})
+                <div className="break-all">
+                  Fichier sélectionné : <strong>{file.name}</strong> ({formatSize(file.size)})
                 </div>
-                {info?.format === 'v2' && !forceEncrypt && (
-                  <div className="text-green-700">Fichier Securio (format v2, AES-256-GCM authentifié).</div>
+                {FORMAT_LABELS[format] && !forceEncrypt && (
+                  <div className={FORMAT_LABELS[format].color}>{FORMAT_LABELS[format].text}</div>
                 )}
-                {info?.format === 'v1' && !forceEncrypt && (
-                  <div className="text-amber-700">
-                    Fichier Securio ancien format (v1, ≤ 1.2.1) : lu en mode compatibilité.
-                  </div>
-                )}
-                {info && (
+                {format && format !== 'future' && (
                   <button
                     type="button"
                     className="text-xs text-blue-600 underline"
                     onClick={() => {
                       setForceEncrypt((v) => !v);
-                      setResult(null);
+                      setOpened(null);
                     }}
                   >
                     {forceEncrypt ? 'Revenir au déchiffrement' : 'Chiffrer ce fichier une seconde fois'}
@@ -192,13 +218,11 @@ function EncryptForm({ initialFile }) {
                 placeholder="Saisissez à nouveau la clé"
                 autoComplete="off"
               />
-              <p className="mt-1 text-xs text-gray-500">
-                Aucune récupération n'est possible en cas d'oubli de la clé.
-              </p>
+              <p className="mt-1 text-xs text-gray-500">Aucune récupération n'est possible en cas d'oubli de la clé.</p>
             </div>
           )}
 
-          {mode === 'decrypt' && info?.format === 'v1' && (
+          {mode === 'decrypt' && format === 'v1' && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="algo">
                 Algorithme utilisé à l'époque
@@ -220,54 +244,60 @@ function EncryptForm({ initialFile }) {
 
           <button
             type="submit"
-            disabled={isLoading || !file}
+            disabled={!!busy || !file || format === 'future'}
             className={`w-full text-white py-2 px-4 rounded-md disabled:opacity-50 ${
               mode === 'encrypt' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
             }`}
           >
-            {isLoading ? 'Traitement en cours…' : mode === 'encrypt' ? 'Chiffrer' : 'Déchiffrer'}
+            {busy || (mode === 'encrypt' ? 'Chiffrer…' : 'Déchiffrer')}
           </button>
+
+          {busy && percent !== null && (
+            <div>
+              <progress className="w-full h-2" value={percent} max={100} />
+              <div className="text-xs text-gray-500 mt-1">
+                {formatSize(progress.done)} / {formatSize(progress.total)} ({percent} %)
+              </div>
+            </div>
+          )}
 
           {error && <div className="text-red-600 text-sm">Erreur : {error}</div>}
           {notice && <div className="text-green-700 text-sm break-all">{notice}</div>}
 
-          {result && (
+          {opened && mode === 'decrypt' && (
             <div className="mt-4 p-3 border rounded-md bg-gray-50 space-y-3">
-              <div className="flex justify-between items-center gap-4">
-                <div className="text-sm text-gray-700 break-all">
-                  <div className="font-medium">{result.name}</div>
-                  <div className="text-xs text-gray-500">
-                    {formatSize(result.content.length)}
-                    {result.format && ` · format ${result.format}`}
-                    {result.algorithm && ` · ${result.algorithm.toUpperCase()}`}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => handleSave(result)}
-                  className="shrink-0 bg-gray-700 text-white py-1 px-3 rounded-md hover:bg-gray-800"
-                >
-                  Sauvegarder
-                </button>
+              <div className="text-xs text-gray-500">
+                Clé correcte · format {opened.format} · {opened.algorithm.toUpperCase()}
               </div>
 
-              {result.warnings?.length > 0 && (
+              {opened.warnings.length > 0 && (
                 <ul className="text-xs text-amber-800 list-disc pl-5 space-y-1">
-                  {result.warnings.map((w) => (
+                  {opened.warnings.map((w) => (
                     <li key={w}>{w}</li>
                   ))}
                 </ul>
               )}
 
-              {result.alternatives?.map((alt) => (
-                <div key={alt.label} className="flex justify-between items-center text-xs text-gray-600">
-                  <span>{alt.label}</span>
+              {opened.variants.map((v, i) => (
+                <div key={v.label} className="flex justify-between items-center gap-4">
+                  <div className="text-sm text-gray-700 break-all">
+                    <div className={i === 0 ? 'font-medium' : ''}>{v.name}</div>
+                    <div className="text-xs text-gray-500">
+                      {i > 0 && `${v.label} · `}
+                      {formatSize(v.size)}
+                    </div>
+                  </div>
                   <button
                     type="button"
-                    onClick={() => handleSave(alt)}
-                    className="border border-gray-400 py-0.5 px-2 rounded-md hover:bg-gray-100"
+                    disabled={!!busy}
+                    onClick={() => handleSave(i)}
+                    className={`shrink-0 py-1 px-3 rounded-md disabled:opacity-50 ${
+                      i === 0
+                        ? 'bg-gray-700 text-white hover:bg-gray-800'
+                        : 'border border-gray-400 text-xs hover:bg-gray-100'
+                    }`}
                   >
-                    Sauvegarder cette version
+                    {i === 0 ? 'Sauvegarder' : 'Sauvegarder cette version'}
                   </button>
                 </div>
               ))}

@@ -1,0 +1,23 @@
+[
+  {
+    "file": "defaut.v3.encrypted",
+    "name": "Résumé très long de l’équipe — 2026 (final).pdf",
+    "originalSha256": "79377de5e174f4d17e4bc9550a5776175255f1bc0c3f2cdbb118c61b7e301d22",
+    "password": "motdepasse",
+    "type": "application/pdf"
+  },
+  {
+    "file": "multi-segments.v3.encrypted",
+    "name": "données.bin",
+    "originalSha256": "6e97d8601cb17906a4819e0fcc8d03150d3e4331353ecaa516c0084cadad54dd",
+    "password": "clé€🔑 secrète",
+    "type": "application/octet-stream"
+  },
+  {
+    "file": "vide.v3.encrypted",
+    "name": "vide.txt",
+    "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "password": "motdepasse",
+    "type": "text/plain"
+  }
+]

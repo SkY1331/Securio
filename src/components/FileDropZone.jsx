@@ -1,59 +1,45 @@
-import { useState, useCallback, useId } from 'react';
+import { useEffect, useState } from 'react';
+import { onDragDrop, pickFile } from '../api';
 
-// Lit TOUJOURS le fichier en binaire (ArrayBuffer).
-// Les versions ≤ 1.2.1 lisaient les images en data-URL et les .txt en texte,
-// ce qui altérait le contenu chiffré (voir src/utils/legacyV1.js).
-async function readFile(file) {
-  const buffer = await file.arrayBuffer();
-  return {
-    content: new Uint8Array(buffer),
-    type: file.type || 'application/octet-stream',
-    name: file.name,
-  };
-}
-
-function FileDropZone({ onFileDrop, onError }) {
+// Zone de dépôt : on ne récupère que le CHEMIN du fichier ; c'est le cœur Rust
+// qui le lit, en flux, sans le charger dans l'interface.
+function FileDropZone({ onFile, disabled }) {
   const [isDragging, setIsDragging] = useState(false);
-  const inputId = useId();
 
-  const handleFiles = useCallback(
-    async (fileList) => {
-      const file = fileList?.[0];
-      if (!file) return;
-      try {
-        onFileDrop(await readFile(file));
-      } catch (e) {
-        onError?.(`Impossible de lire le fichier : ${e.message}`);
+  useEffect(() => {
+    let unlisten;
+    let cancelled = false;
+    onDragDrop((event) => {
+      if (event.type === 'enter' || event.type === 'over') setIsDragging(true);
+      else if (event.type === 'leave') setIsDragging(false);
+      else if (event.type === 'drop') {
+        setIsDragging(false);
+        if (!disabled && event.paths?.length) onFile(event.paths[0]);
       }
-    },
-    [onFileDrop, onError]
-  );
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [onFile, disabled]);
 
-  const stop = (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const choose = async () => {
+    if (disabled) return;
+    const path = await pickFile();
+    if (path) onFile(path);
   };
 
   return (
-    <label
-      htmlFor={inputId}
-      className={`block cursor-pointer border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors ${
+    <button
+      type="button"
+      onClick={choose}
+      disabled={disabled}
+      className={`w-full border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors disabled:opacity-50 ${
         isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
       }`}
-      onDragEnter={(e) => {
-        stop(e);
-        setIsDragging(true);
-      }}
-      onDragLeave={(e) => {
-        stop(e);
-        setIsDragging(false);
-      }}
-      onDragOver={stop}
-      onDrop={(e) => {
-        stop(e);
-        setIsDragging(false);
-        handleFiles(e.dataTransfer.files);
-      }}
     >
       <div className="flex flex-col items-center justify-center space-y-2">
         <svg
@@ -74,17 +60,8 @@ function FileDropZone({ onFileDrop, onError }) {
         <p className="text-xs sm:text-sm text-gray-600">
           {isDragging ? 'Déposez le fichier ici' : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
         </p>
-        <input
-          id={inputId}
-          type="file"
-          className="hidden"
-          onChange={(e) => {
-            handleFiles(e.target.files);
-            e.target.value = ''; // permet de re-sélectionner le même fichier
-          }}
-        />
       </div>
-    </label>
+    </button>
   );
 }
 
