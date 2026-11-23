@@ -1,3 +1,6 @@
+// COPIE CONFORME de src/utils/cryptoUtils.js (v1.2.1, commit 5621001).
+// NE PAS MODIFIER : sert de référence pour générer/vérifier les fichiers témoins v1.
+
 // Utilisation de l'API Web Crypto
 const crypto = window.crypto;
 

@@ -1,53 +1,36 @@
 {
   "name": "securio",
   "private": true,
-  "version": "1.1.0",
+  "version": "2.0.0",
   "type": "module",
   "description": "Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles",
   "author": "SkY1331",
-  "main": "dist/main.cjs",
   "scripts": {
     "dev": "vite",
-    "build": "vite build && copy src\\main.cjs dist\\main.cjs",
-    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
-    "preview": "vite preview",
-    "electron:build": "electron-builder --win --x64 --config.asar=false --config.win.target=portable --config.win.signAndEditExecutable=false"
-  },
-  "build": {
-    "appId": "com.securio.app",
-    "productName": "Securio",
-    "files": [
-      "dist/**/*"
-    ],
-    "directories": {
-      "output": "release"
-    },
-    "win": {
-      "target": "portable",
-      "icon": "public/icon.ico",
-      "signAndEditExecutable": false
-    },
-    "asar": false
+    "build": "vite build",
+    "tauri": "tauri",
+    "app:dev": "tauri dev",
+    "app:build": "tauri build",
+    "test": "cargo test --workspace",
+    "lint": "eslint . && cargo clippy --workspace --all-targets -- -D warnings"
   },
   "dependencies": {
-    "react": "^18.2.0",
-    "react-dom": "^18.2.0"
+    "@tauri-apps/api": "^2.12.5",
+    "@tauri-apps/plugin-dialog": "^2.8.4"
   },
   "devDependencies": {
-    "@types/react": "^18.2.43",
-    "@types/react-dom": "^18.2.17",
-    "@vitejs/plugin-react": "^4.2.1",
-    "autoprefixer": "^10.4.17",
-    "electron": "^28.1.0",
-    "electron-builder": "^24.9.1",
-    "eslint": "^8.55.0",
-    "eslint-plugin-react": "^7.33.2",
-    "eslint-plugin-react-hooks": "^4.6.0",
-    "eslint-plugin-react-refresh": "^0.4.5",
-    "postcss": "^8.4.33",
-    "tailwindcss": "^3.4.1",
-    "vite": "^5.0.8",
-    "vite-plugin-electron": "^0.15.6",
-    "vite-plugin-electron-renderer": "^0.14.5"
+    "@eslint/js": "^9.39.5",
+    "@tauri-apps/cli": "^2.12.6",
+    "@vitejs/plugin-react": "^6.3.0",
+    "autoprefixer": "^10.7.0",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.8",
+    "globals": "^17.14.0",
+    "postcss": "^8.5.33",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^3.4.19",
+    "vite": "^8.3.8"
   }
 }

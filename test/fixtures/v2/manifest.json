@@ -1,0 +1,16 @@
+[
+  {
+    "file": "binaire.v2.encrypted",
+    "password": "motdepasse",
+    "name": "Résumé très long de l’équipe — 2026 (final).pdf",
+    "type": "application/pdf",
+    "originalSha256": "79377de5e174f4d17e4bc9550a5776175255f1bc0c3f2cdbb118c61b7e301d22"
+  },
+  {
+    "file": "mdp-unicode.v2.encrypted",
+    "password": "clé€🔑 secrète",
+    "name": "a.bin",
+    "type": "application/octet-stream",
+    "originalSha256": "79377de5e174f4d17e4bc9550a5776175255f1bc0c3f2cdbb118c61b7e301d22"
+  }
+]

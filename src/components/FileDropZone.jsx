@@ -1,64 +1,45 @@
-import { useState, useCallback } from 'react';
+import { useEffect, useState } from 'react';
+import { onDragDrop, pickFile } from '../api';
 
-function FileDropZone({ onFileDrop }) {
+// Zone de dépôt : on ne récupère que le CHEMIN du fichier ; c'est le cœur Rust
+// qui le lit, en flux, sans le charger dans l'interface.
+function FileDropZone({ onFile, disabled }) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const handleDragEnter = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  }, []);
-
-  const handleDragLeave = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  }, []);
-
-  const handleDragOver = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-  }, []);
-
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const files = Array.from(e.dataTransfer.files);
-    if (files.length > 0) {
-      const file = files[0];
-      const reader = new FileReader();
-      
-      if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
-        reader.readAsText(file);
-      } else if (file.type.startsWith('image/')) {
-        reader.readAsDataURL(file);
-      } else {
-        reader.readAsArrayBuffer(file);
+  useEffect(() => {
+    let unlisten;
+    let cancelled = false;
+    onDragDrop((event) => {
+      if (event.type === 'enter' || event.type === 'over') setIsDragging(true);
+      else if (event.type === 'leave') setIsDragging(false);
+      else if (event.type === 'drop') {
+        setIsDragging(false);
+        if (!disabled && event.paths?.length) onFile(event.paths[0]);
       }
-      
-      reader.onload = (event) => {
-        onFileDrop({
-          content: event.target.result,
-          type: file.type,
-          name: file.name
-        });
-      };
-    }
-  }, [onFileDrop]);
+    }).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [onFile, disabled]);
+
+  const choose = async () => {
+    if (disabled) return;
+    const path = await pickFile();
+    if (path) onFile(path);
+  };
 
   return (
-    <div
-      className={`border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors ${
-        isDragging
-          ? 'border-blue-500 bg-blue-50'
-          : 'border-gray-300 hover:border-gray-400'
+    <button
+      type="button"
+      onClick={choose}
+      disabled={disabled}
+      className={`w-full border-2 border-dashed rounded-lg p-4 sm:p-6 text-center transition-colors disabled:opacity-50 ${
+        isDragging ? 'border-blue-500 bg-blue-50' : 'border-gray-300 hover:border-gray-400'
       }`}
-      onDragEnter={handleDragEnter}
-      onDragLeave={handleDragLeave}
-      onDragOver={handleDragOver}
-      onDrop={handleDrop}
     >
       <div className="flex flex-col items-center justify-center space-y-2">
         <svg
@@ -67,6 +48,7 @@ function FileDropZone({ onFileDrop }) {
           stroke="currentColor"
           viewBox="0 0 24 24"
           xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true"
         >
           <path
             strokeLinecap="round"
@@ -76,39 +58,11 @@ function FileDropZone({ onFileDrop }) {
           />
         </svg>
         <p className="text-xs sm:text-sm text-gray-600">
-          {isDragging
-            ? 'Déposez le fichier ici'
-            : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
+          {isDragging ? 'Déposez le fichier ici' : 'Glissez-déposez un fichier ici ou cliquez pour sélectionner'}
         </p>
-        <input
-          type="file"
-          className="hidden"
-          onChange={(e) => {
-            const file = e.target.files[0];
-            if (file) {
-              const reader = new FileReader();
-              
-              if (file.type.startsWith('text/') || file.name.endsWith('.txt')) {
-                reader.readAsText(file);
-              } else if (file.type.startsWith('image/')) {
-                reader.readAsDataURL(file);
-              } else {
-                reader.readAsArrayBuffer(file);
-              }
-              
-              reader.onload = (event) => {
-                onFileDrop({
-                  content: event.target.result,
-                  type: file.type,
-                  name: file.name
-                });
-              };
-            }
-          }}
-        />
       </div>
-    </div>
+    </button>
   );
 }
 
-export default FileDropZone; 
+export default FileDropZone;

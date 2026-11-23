@@ -1,204 +1,312 @@
-import { useState, useEffect } from 'react';
-import { encrypt, decrypt } from '../utils/cryptoUtils';
+import { useCallback, useEffect, useState } from 'react';
 import FileDropZone from './FileDropZone';
+import {
+  ENCRYPTED_EXTENSION,
+  closeSession,
+  encryptFile,
+  inspectFile,
+  launchFiles,
+  onOpenFile,
+  openEncrypted,
+  pickSavePath,
+  saveDecrypted,
+  siblingPath,
+} from '../api';
 
-const algorithms = [
+const LEGACY_ALGORITHMS = [
+  { value: 'auto', label: 'Détection automatique (recommandé)' },
   { value: 'aes-256-cbc', label: 'AES-256-CBC' },
   { value: 'aes-192-cbc', label: 'AES-192-CBC' },
   { value: 'aes-128-cbc', label: 'AES-128-CBC' },
 ];
 
-function EncryptForm({ initialFile }) {
-  const [file, setFile] = useState(null);
+const FORMAT_LABELS = {
+  v3: { text: 'Fichier Securio (format v3 : Argon2id + AES-256-GCM).', color: 'text-green-700' },
+  v2: { text: 'Fichier Securio 1.3 (format v2, AES-256-GCM).', color: 'text-green-700' },
+  v1: { text: 'Fichier Securio ancien format (v1, ≤ 1.2.1) : lu en mode compatibilité.', color: 'text-amber-700' },
+};
+
+function formatSize(bytes) {
+  if (bytes < 1024) return `${bytes} o`;
+  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} Ko`;
+  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} Mo`;
+  return `${(bytes / 1024 ** 3).toFixed(2)} Go`;
+}
+
+const message = (e) => (typeof e === 'string' ? e : e?.message || String(e));
+
+function EncryptForm() {
+  const [file, setFile] = useState(null); // { path, name, size, inspection }
   const [key, setKey] = useState('');
-  const [algorithm, setAlgorithm] = useState('aes-256-cbc');
-  const [result, setResult] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [confirmKey, setConfirmKey] = useState('');
+  const [showKey, setShowKey] = useState(false);
+  const [legacyAlgorithm, setLegacyAlgorithm] = useState('auto');
+  const [forceEncrypt, setForceEncrypt] = useState(false);
+  const [busy, setBusy] = useState(null); // libellé de l'opération en cours
+  const [progress, setProgress] = useState(null); // { done, total }
+  const [opened, setOpened] = useState(null); // résultat de open_encrypted
   const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
 
+  const format = file?.inspection?.format;
+  const mode = format && format !== 'future' && !forceEncrypt ? 'decrypt' : 'encrypt';
+
+  const loadPath = useCallback(async (path) => {
+    let summary = null;
+    let failure = '';
+    try {
+      summary = await inspectFile(path);
+      if (summary.inspection?.format === 'future') {
+        failure = `Ce fichier utilise le format v${summary.inspection.version}, créé par une version plus récente de Securio. Mettez l'application à jour.`;
+      }
+    } catch (e) {
+      failure = message(e);
+    }
+    await closeSession().catch(() => {});
+    setFile(summary);
+    setOpened(null);
+    setForceEncrypt(false);
+    setConfirmKey('');
+    setProgress(null);
+    setNotice('');
+    setError(failure);
+  }, []);
+
+  // Fichiers ouverts depuis le système : au lancement (double-clic, « Ouvrir avec »)
+  // ou pendant que l'application tourne (transmis par l'instance unique).
   useEffect(() => {
-    if (initialFile) {
-      setFile(initialFile);
-    }
-  }, [initialFile]);
+    let cancelled = false;
+    let unlisten;
+    launchFiles()
+      .then((files) => !cancelled && files?.length && loadPath(files[0]))
+      .catch((e) => console.error(e));
+    onOpenFile((path) => loadPath(path)).then((fn) => {
+      if (cancelled) fn();
+      else unlisten = fn;
+    });
+    return () => {
+      cancelled = true;
+      unlisten?.();
+    };
+  }, [loadPath]);
 
-  const handleFileDrop = (fileData) => {
-    setFile(fileData);
-    setResult(null);
+  const run = async (label, fn) => {
     setError('');
-  };
-
-  const handleEncrypt = async () => {
+    setNotice('');
+    setBusy(label);
     try {
-      setIsLoading(true);
-      setError('');
-      
-      if (!file) {
-        throw new Error('Veuillez sélectionner un fichier');
-      }
-      
-      if (!key) {
-        throw new Error('Veuillez entrer une clé secrète');
-      }
-      
-      const encrypted = await encrypt(
-        file.content,
-        key,
-        algorithm,
-        file.type,
-        file.name
-      );
-      
-      setResult({
-        content: encrypted,
-        type: 'application/octet-stream',
-        name: `${file.name}.encrypted`
-      });
-    } catch (error) {
-      setError(`Erreur: ${error.message}`);
-      setResult(null);
+      await fn();
+    } catch (e) {
+      setError(message(e));
     } finally {
-      setIsLoading(false);
+      setBusy(null);
+      setProgress(null);
     }
   };
 
-  const handleDecrypt = async () => {
-    try {
-      setIsLoading(true);
-      setError('');
-      
-      if (!file) {
-        throw new Error('Veuillez sélectionner un fichier');
-      }
-      
-      if (!key) {
-        throw new Error('Veuillez entrer une clé secrète');
-      }
-      
-      const decrypted = await decrypt(file.content, key, algorithm);
-      setResult(decrypted);
-    } catch (error) {
-      setError(`Erreur: ${error.message}`);
-      setResult(null);
-    } finally {
-      setIsLoading(false);
-    }
+  const handleEncrypt = () =>
+    run('Chiffrement…', async () => {
+      if (key !== confirmKey) throw new Error('Les deux clés saisies ne correspondent pas.');
+      const output = await pickSavePath(`${file.path}${ENCRYPTED_EXTENSION}`, 'Enregistrer le fichier chiffré');
+      if (!output) return;
+      setProgress({ done: 0, total: file.size });
+      await encryptFile(file.path, output, key, (done) => setProgress({ done, total: file.size }));
+      setKey('');
+      setConfirmKey('');
+      setNotice(`Fichier chiffré enregistré : ${output}`);
+    });
+
+  const handleDecrypt = () =>
+    run('Vérification de la clé…', async () => {
+      setOpened(null);
+      setOpened(await openEncrypted(file.path, key, legacyAlgorithm));
+    });
+
+  const handleSave = (index) =>
+    run('Déchiffrement…', async () => {
+      const variant = opened.variants[index];
+      const output = await pickSavePath(await siblingPath(file.path, variant.name), 'Enregistrer le fichier déchiffré');
+      if (!output) return;
+      setProgress({ done: 0, total: variant.size });
+      await saveDecrypted(opened.session, index, output, (done) => setProgress({ done, total: variant.size }));
+      setNotice(`Fichier déchiffré enregistré : ${output}`);
+    });
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    if (!file) return setError('Veuillez sélectionner un fichier.');
+    if (!key) return setError('Veuillez entrer une clé secrète.');
+    return mode === 'encrypt' ? handleEncrypt() : handleDecrypt();
   };
 
-  const handleSaveResult = () => {
-    if (!result) return;
-
-    const blob = new Blob([result.content], { type: result.type || 'application/octet-stream' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = result.name || 'fichier';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  };
+  const weakKey = mode === 'encrypt' && key.length > 0 && key.length < 10;
+  const percent = progress?.total ? Math.min(100, Math.round((progress.done / progress.total) * 100)) : null;
 
   return (
     <div className="max-w-4xl mx-auto p-4">
-      <div className="bg-white rounded-lg shadow-lg p-6">
+      <form className="bg-white rounded-lg shadow-lg p-6" onSubmit={handleSubmit}>
         <h2 className="text-2xl font-bold mb-6">Chiffrement/Déchiffrement de fichiers</h2>
-        
+
         <div className="space-y-6">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Fichier à traiter
-            </label>
-            <FileDropZone onFileDrop={handleFileDrop} />
+            <span className="block text-sm font-medium text-gray-700 mb-2">Fichier à traiter</span>
+            <FileDropZone onFile={loadPath} disabled={!!busy} />
             {file && (
-              <div className="mt-2 text-sm text-gray-600">
-                Fichier sélectionné : {file.name}
+              <div className="mt-2 text-sm text-gray-600 space-y-1">
+                <div className="break-all">
+                  Fichier sélectionné : <strong>{file.name}</strong> ({formatSize(file.size)})
+                </div>
+                {FORMAT_LABELS[format] && !forceEncrypt && (
+                  <div className={FORMAT_LABELS[format].color}>{FORMAT_LABELS[format].text}</div>
+                )}
+                {format && format !== 'future' && (
+                  <button
+                    type="button"
+                    className="text-xs text-blue-600 underline"
+                    onClick={() => {
+                      setForceEncrypt((v) => !v);
+                      setOpened(null);
+                    }}
+                  >
+                    {forceEncrypt ? 'Revenir au déchiffrement' : 'Chiffrer ce fichier une seconde fois'}
+                  </button>
+                )}
               </div>
             )}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
+            <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="key">
               Clé secrète
             </label>
-            <input
-              type="password"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md"
-              placeholder="Entrez votre clé secrète"
-            />
+            <div className="flex gap-2">
+              <input
+                id="key"
+                type={showKey ? 'text' : 'password'}
+                value={key}
+                onChange={(e) => setKey(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+                placeholder="Entrez votre clé secrète"
+                autoComplete="off"
+              />
+              <button
+                type="button"
+                className="px-3 border rounded-md text-sm text-gray-600"
+                onClick={() => setShowKey((v) => !v)}
+              >
+                {showKey ? 'Masquer' : 'Afficher'}
+              </button>
+            </div>
+            {weakKey && (
+              <p className="mt-1 text-xs text-amber-700">
+                Clé courte : préférez au moins 10 caractères (ou une phrase de passe).
+              </p>
+            )}
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Algorithme
-            </label>
-            <select
-              value={algorithm}
-              onChange={(e) => setAlgorithm(e.target.value)}
-              className="w-full px-3 py-2 border rounded-md"
-            >
-              {algorithms.map((algo) => (
-                <option key={algo.value} value={algo.value}>
-                  {algo.label}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex space-x-4">
-            <button
-              onClick={handleEncrypt}
-              disabled={isLoading}
-              className="flex-1 bg-blue-600 text-white py-2 px-4 rounded-md hover:bg-blue-700 disabled:opacity-50"
-            >
-              Chiffrer
-            </button>
-            <button
-              onClick={handleDecrypt}
-              disabled={isLoading}
-              className="flex-1 bg-green-600 text-white py-2 px-4 rounded-md hover:bg-green-700 disabled:opacity-50"
-            >
-              Déchiffrer
-            </button>
-          </div>
-
-          {error && (
-            <div className="text-red-600 text-sm">
-              {error}
+          {mode === 'encrypt' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="confirmKey">
+                Confirmer la clé
+              </label>
+              <input
+                id="confirmKey"
+                type={showKey ? 'text' : 'password'}
+                value={confirmKey}
+                onChange={(e) => setConfirmKey(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+                placeholder="Saisissez à nouveau la clé"
+                autoComplete="off"
+              />
+              <p className="mt-1 text-xs text-gray-500">Aucune récupération n'est possible en cas d'oubli de la clé.</p>
             </div>
           )}
 
-          {result && (
-            <div className="mt-4">
-              <div className="flex justify-between items-center mb-2">
-                <h3 className="text-lg font-medium">Résultat</h3>
-                <button
-                  onClick={handleSaveResult}
-                  className="bg-gray-600 text-white py-1 px-3 rounded-md hover:bg-gray-700"
-                >
-                  Sauvegarder
-                </button>
+          {mode === 'decrypt' && format === 'v1' && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2" htmlFor="algo">
+                Algorithme utilisé à l'époque
+              </label>
+              <select
+                id="algo"
+                value={legacyAlgorithm}
+                onChange={(e) => setLegacyAlgorithm(e.target.value)}
+                className="w-full px-3 py-2 border rounded-md"
+              >
+                {LEGACY_ALGORITHMS.map((a) => (
+                  <option key={a.value} value={a.value}>
+                    {a.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={!!busy || !file || format === 'future'}
+            className={`w-full text-white py-2 px-4 rounded-md disabled:opacity-50 ${
+              mode === 'encrypt' ? 'bg-blue-600 hover:bg-blue-700' : 'bg-green-600 hover:bg-green-700'
+            }`}
+          >
+            {busy || (mode === 'encrypt' ? 'Chiffrer…' : 'Déchiffrer')}
+          </button>
+
+          {busy && percent !== null && (
+            <div>
+              <progress className="w-full h-2" value={percent} max={100} />
+              <div className="text-xs text-gray-500 mt-1">
+                {formatSize(progress.done)} / {formatSize(progress.total)} ({percent} %)
               </div>
-              <div className="w-full h-[calc(100%-2rem)] p-2 border rounded-md bg-gray-50">
-                <div className="h-full flex flex-col">
-                  <div className="text-xs text-gray-400 mb-1">
-                    <span>Nom: {result.name || 'N/A'}</span> | <span>Type: {result.type || 'N/A'}</span>
+            </div>
+          )}
+
+          {error && <div className="text-red-600 text-sm">Erreur : {error}</div>}
+          {notice && <div className="text-green-700 text-sm break-all">{notice}</div>}
+
+          {opened && mode === 'decrypt' && (
+            <div className="mt-4 p-3 border rounded-md bg-gray-50 space-y-3">
+              <div className="text-xs text-gray-500">
+                Clé correcte · format {opened.format} · {opened.algorithm.toUpperCase()}
+              </div>
+
+              {opened.warnings.length > 0 && (
+                <ul className="text-xs text-amber-800 list-disc pl-5 space-y-1">
+                  {opened.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              )}
+
+              {opened.variants.map((v, i) => (
+                <div key={v.label} className="flex justify-between items-center gap-4">
+                  <div className="text-sm text-gray-700 break-all">
+                    <div className={i === 0 ? 'font-medium' : ''}>{v.name}</div>
+                    <div className="text-xs text-gray-500">
+                      {i > 0 && `${v.label} · `}
+                      {formatSize(v.size)}
+                    </div>
                   </div>
-                  <div className="flex items-center justify-center h-full">
-                    <p className="text-gray-500">
-                      Fichier binaire - Utilisez le bouton "Sauvegarder" pour télécharger
-                    </p>
-                  </div>
+                  <button
+                    type="button"
+                    disabled={!!busy}
+                    onClick={() => handleSave(i)}
+                    className={`shrink-0 py-1 px-3 rounded-md disabled:opacity-50 ${
+                      i === 0
+                        ? 'bg-gray-700 text-white hover:bg-gray-800'
+                        : 'border border-gray-400 text-xs hover:bg-gray-100'
+                    }`}
+                  >
+                    {i === 0 ? 'Sauvegarder' : 'Sauvegarder cette version'}
+                  </button>
                 </div>
-              </div>
+              ))}
             </div>
           )}
         </div>
-      </div>
+      </form>
     </div>
   );
 }
 
-export default EncryptForm; 
+export default EncryptForm;

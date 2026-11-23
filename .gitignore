@@ -36,3 +36,7 @@ pnpm-debug.log*
 
 # Electron
 .electron-builder.env 
+# Rust / Tauri
+target/
+src-tauri/gen/schemas/
+*.securio-tmp
