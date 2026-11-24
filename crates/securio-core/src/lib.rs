@@ -15,7 +15,7 @@ pub mod v2;
 pub mod v3;
 
 pub use error::{Error, Result};
-pub use names::{name_from_encrypted_name, sanitize_file_name};
+pub use names::{name_from_encrypted_name, name_warnings, risky_extension, sanitize_file_name};
 
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -106,7 +106,7 @@ pub fn decrypt_legacy(bytes: &[u8], password: &str, opts: &LegacyOptions) -> Res
             Ok(Decrypted {
                 format: "v2",
                 algorithm: "aes-256-gcm",
-                warnings: vec![],
+                warnings: name_warnings(&meta.name),
                 variants: vec![Variant {
                     label: "Fichier déchiffré".into(),
                     name: sanitize_file_name(&meta.name),
@@ -147,6 +147,7 @@ fn decrypt_v1(
     if name.is_empty() {
         name = outer.unwrap_or_default();
     }
+    warnings.extend(name_warnings(&name));
     let name = sanitize_file_name(&name);
     let octet = "application/octet-stream".to_string();
     let raw_label = "Contenu brut (tel que stocké)".to_string();

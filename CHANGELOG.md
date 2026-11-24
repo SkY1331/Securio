@@ -1,5 +1,26 @@
 # Changelog
 
+## [2.1.0] - 2026-11-23
+
+### Sécurité
+- **Noms de fichiers piégés** : les caractères invisibles et d'inversion du sens de lecture
+  (U+202E…) sont retirés des noms d'origine, avec un avertissement ; alerte quand le fichier
+  déchiffré est un programme, un script ou un document à macros ; noms réservés de Windows
+  (`CON`, `NUL`…) neutralisés
+- **En-têtes hostiles** : bornes Argon2 resserrées (≤ 1 Gio, ≤ 10 passes) — un fichier forgé ne
+  peut plus bloquer l'application
+- **Argon2id à 256 Mio** par défaut (au lieu de 64 Mio) : une attaque par force brute coûte 4 fois
+  plus cher ; les fichiers 2.0 restent lisibles (paramètres lus dans l'en-tête)
+- **Robustesse de la clé** évaluée pendant la saisie (zxcvbn, dictionnaires français et anglais) ;
+  les clés « très faibles » et « faibles » sont refusées au chiffrement
+- **Secrets en mémoire** : mots de passe effacés côté Rust, clé retirée de l'interface après
+  ouverture d'un fichier, session (contenu v1/v2 ou clé v3) effacée après 5 minutes d'inactivité
+- **Fichiers temporaires** : journalisés et supprimés au démarrage suivant si l'application a été
+  interrompue pendant un déchiffrement
+- **CI** : permissions minimales par job (écriture réservée à la publication sur tag), actions
+  épinglées par empreinte, `npm ci --ignore-scripts`, audit RustSec et npm, Dependabot, empreintes
+  `SHA256SUMS.txt` et attestation de provenance des exécutables
+
 ## [2.0.0] - 2026-11-23
 
 ### Architecture

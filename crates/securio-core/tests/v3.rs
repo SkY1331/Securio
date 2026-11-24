@@ -65,7 +65,7 @@ fn default_params() {
     let h = v3::V3Header::parse(&f).unwrap();
     assert_eq!(
         (h.m_cost_kib, h.t_cost, h.p_cost, h.chunk_size),
-        (65536, 3, 4, 1 << 20)
+        (262144, 3, 4, 1 << 20)
     );
     assert_eq!(dec(&f, "x").unwrap().1, d);
 }
@@ -176,9 +176,38 @@ fn file_changed_during_encryption() {
 
 #[test]
 fn hostile_header_is_rejected_cheaply() {
-    let mut f = enc(&data(10), "k", &FAST);
-    f[9..13].copy_from_slice(&u32::MAX.to_le_bytes()); // m_cost énorme
+    let base = enc(&data(10), "k", &FAST);
+    // mémoire Argon2 > 1 Gio
+    let mut f = base.clone();
+    f[9..13].copy_from_slice(&(1024 * 1024 + 1u32).to_le_bytes());
     assert!(matches!(dec(&f, "k"), Err(Error::Invalid(_))));
+    // passes Argon2 > 10
+    let mut f = base.clone();
+    f[13..17].copy_from_slice(&11u32.to_le_bytes());
+    assert!(matches!(dec(&f, "k"), Err(Error::Invalid(_))));
+    // parallélisme nul
+    let mut f = base.clone();
+    f[17] = 0;
+    assert!(matches!(dec(&f, "k"), Err(Error::Invalid(_))));
+    // segments démesurés
+    let mut f = base;
+    f[21..25].copy_from_slice(&u32::MAX.to_le_bytes());
+    assert!(matches!(dec(&f, "k"), Err(Error::Invalid(_))));
+}
+
+#[test]
+fn params_of_published_versions_stay_accepted() {
+    // 2.0 (64 Mio) et 2.1 (256 Mio) : les bornes ne doivent jamais les exclure
+    for m in [64 * 1024, 256 * 1024] {
+        let p = Params {
+            m_cost_kib: m,
+            t_cost: 3,
+            p_cost: 4,
+            chunk_size: 1 << 20,
+        };
+        let f = enc(&data(10), "k", &p);
+        assert_eq!(dec(&f, "k").unwrap().1, data(10));
+    }
 }
 
 #[test]

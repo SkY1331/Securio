@@ -47,3 +47,6 @@ export async function pickSavePath(defaultPath, title) {
 export async function siblingPath(path, name) {
   return join(await dirname(path), name);
 }
+
+/** Session effacée de la mémoire après inactivité. */
+export const onSessionExpired = (callback) => listen('session-expired', () => callback());

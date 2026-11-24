@@ -4,7 +4,7 @@
 //! Offset Taille Champ
 //! 0      7      "SECURIO"
 //! 7      1      version (3)
-//! 8      1      KDF : 2 = Argon2id (v0x13)
+//! 8      1      KDF : 2 = Argon2id (v0x13), 256 Mio / t=3 / p=4 par défaut (64 Mio en 2.0)
 //! 9      4      Argon2 m_cost en Kio (u32 LE)
 //! 13     4      Argon2 t_cost (u32 LE)
 //! 17     1      Argon2 parallélisme
@@ -44,9 +44,12 @@ const NONCE_PREFIX_LEN: usize = 7;
 const TAG_LEN: usize = 16;
 const META_PAD: usize = 256;
 
-// Garde-fous contre un fichier forgé (déni de service)
-const MAX_M_COST_KIB: u32 = 4 * 1024 * 1024; // 4 Gio
-const MAX_T_COST: u32 = 64;
+// Garde-fous contre un fichier forgé (déni de service) : au pire ~1 Gio de
+// mémoire et quelques secondes de calcul avant que la clé soit refusée.
+// Ne JAMAIS les abaisser sous les paramètres utilisés par une version publiée
+// (2.0 : 64 Mio / t=3 ; 2.1 : 256 Mio / t=3), sous peine de rendre ces fichiers illisibles.
+const MAX_M_COST_KIB: u32 = 1024 * 1024; // 1 Gio
+const MAX_T_COST: u32 = 10;
 const MAX_P_COST: u8 = 16;
 const MIN_CHUNK: u32 = 1024;
 const MAX_CHUNK: u32 = 64 * 1024 * 1024;
@@ -62,11 +65,15 @@ pub struct Params {
 }
 
 impl Default for Params {
-    /// RFC 9106, deuxième recommandation : Argon2id, 64 Mio, t = 3, p = 4.
-    /// Segments de 1 Mio.
+    /// Argon2id, 256 Mio, t = 3, p = 4 (RFC 9106 recommande au moins 64 Mio ;
+    /// 256 Mio coûtent ~0,7 s sur un processeur modeste et quadruplent le coût
+    /// d'une attaque par force brute). Segments de 1 Mio.
+    ///
+    /// Securio 2.0 utilisait 64 Mio : ces fichiers restent lisibles, les
+    /// paramètres étant lus dans l'en-tête de chaque fichier.
     fn default() -> Self {
         Params {
-            m_cost_kib: 64 * 1024,
+            m_cost_kib: 256 * 1024,
             t_cost: 3,
             p_cost: 4,
             chunk_size: 1024 * 1024,

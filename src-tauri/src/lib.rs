@@ -14,6 +14,12 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter, Manager, State};
+use zeroize::Zeroizing;
+
+/// Durée d'inactivité après laquelle le contenu déchiffré (v1/v2) ou la clé (v3)
+/// sont effacés de la mémoire.
+const SESSION_TTL: Duration = Duration::from_secs(5 * 60);
+const TEMP_SUFFIX: &str = ".securio-tmp";
 
 /// Taille maximale d'un fichier v1/v2 (déchiffrés en mémoire).
 const MAX_LEGACY_SIZE: u64 = 2 * 1024 * 1024 * 1024;
@@ -35,12 +41,88 @@ enum Session {
     V3 { path: PathBuf, opened: v3::Opened },
 }
 
+struct SessionSlot {
+    id: u64,
+    session: Arc<Session>,
+    last_used: Instant,
+}
+
 #[derive(Default)]
 struct AppState {
     launch_files: Mutex<Vec<String>>,
     /// Une seule session à la fois : ouvrir un autre fichier efface la précédente.
-    session: Mutex<Option<(u64, Arc<Session>)>>,
+    session: Mutex<Option<SessionSlot>>,
     next_id: AtomicU64,
+    journal: TempJournal,
+}
+
+/// Journal des fichiers temporaires en cours d'écriture. Si l'application est
+/// interrompue (coupure, plantage), ceux qui restent — qui peuvent contenir un
+/// début de fichier déchiffré — sont supprimés au démarrage suivant.
+#[derive(Default)]
+struct TempJournal {
+    path: Mutex<Option<PathBuf>>,
+}
+
+impl TempJournal {
+    fn entries(path: &Path) -> Vec<PathBuf> {
+        fs::read_to_string(path)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(PathBuf::from)
+            .collect()
+    }
+
+    fn save(path: &Path, entries: &[PathBuf]) {
+        let text: String = entries
+            .iter()
+            .map(|p| format!("{}\n", p.display()))
+            .collect();
+        let _ = fs::write(path, text);
+    }
+
+    fn add(&self, tmp: &Path) {
+        if let Ok(guard) = self.path.lock() {
+            if let Some(j) = guard.as_ref() {
+                let mut e = Self::entries(j);
+                e.push(tmp.to_path_buf());
+                Self::save(j, &e);
+            }
+        }
+    }
+
+    fn remove(&self, tmp: &Path) {
+        if let Ok(guard) = self.path.lock() {
+            if let Some(j) = guard.as_ref() {
+                let e: Vec<PathBuf> = Self::entries(j).into_iter().filter(|p| p != tmp).collect();
+                Self::save(j, &e);
+            }
+        }
+    }
+
+    /// Active le journal et supprime les temporaires laissés par une exécution interrompue.
+    /// Renvoie le nombre de fichiers supprimés.
+    fn init(&self, journal: PathBuf) -> usize {
+        let mut removed = 0;
+        for p in Self::entries(&journal) {
+            let ours = p
+                .file_name()
+                .map(|n| n.to_string_lossy().ends_with(TEMP_SUFFIX))
+                .unwrap_or(false);
+            if ours && p.is_file() && fs::remove_file(&p).is_ok() {
+                removed += 1;
+            }
+        }
+        if let Some(dir) = journal.parent() {
+            let _ = fs::create_dir_all(dir);
+        }
+        Self::save(&journal, &[]);
+        if let Ok(mut g) = self.path.lock() {
+            *g = Some(journal);
+        }
+        removed
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +139,7 @@ fn file_name(p: &Path) -> String {
 /// d'erreur (clé incorrecte, fichier altéré, disque plein…), aucun fichier
 /// partiel n'est laissé à la place de la cible.
 fn write_atomically(
+    journal: &TempJournal,
     target: &Path,
     write: impl FnOnce(&mut BufWriter<File>) -> core::Result<()>,
 ) -> CmdResult<()> {
@@ -67,12 +150,23 @@ fn write_atomically(
     let mut rnd = [0u8; 6];
     getrandom::getrandom(&mut rnd).map_err(err)?;
     let suffix: String = rnd.iter().map(|b| format!("{b:02x}")).collect();
-    let tmp = dir.join(format!(".{}.{suffix}.securio-tmp", file_name(target)));
+    let tmp = dir.join(format!(".{}.{suffix}{TEMP_SUFFIX}", file_name(target)));
 
+    journal.add(&tmp);
+    let result = write_to_temp(&tmp, target, write);
+    journal.remove(&tmp);
+    result
+}
+
+fn write_to_temp(
+    tmp: &Path,
+    target: &Path,
+    write: impl FnOnce(&mut BufWriter<File>) -> core::Result<()>,
+) -> CmdResult<()> {
     let file = OpenOptions::new()
         .write(true)
         .create_new(true)
-        .open(&tmp)
+        .open(tmp)
         .map_err(err)?;
     let mut writer = BufWriter::with_capacity(1 << 20, file);
     let result = write(&mut writer)
@@ -80,12 +174,12 @@ fn write_atomically(
         .and_then(|_| writer.get_ref().sync_all().map_err(core::Error::from));
     drop(writer);
     match result {
-        Ok(()) => fs::rename(&tmp, target).map_err(|e| {
-            let _ = fs::remove_file(&tmp);
+        Ok(()) => fs::rename(tmp, target).map_err(|e| {
+            let _ = fs::remove_file(tmp);
             err(e)
         }),
         Err(e) => {
-            let _ = fs::remove_file(&tmp);
+            let _ = fs::remove_file(tmp);
             Err(err(e))
         }
     }
@@ -154,12 +248,15 @@ async fn inspect_file(path: String) -> CmdResult<FileSummary> {
 /// Chiffre `input` vers `output` au format v3.
 #[tauri::command]
 async fn encrypt_file(
+    app: AppHandle,
     input: String,
     output: String,
     password: String,
     on_progress: Channel<u64>,
 ) -> CmdResult<String> {
+    let password = Zeroizing::new(password);
     blocking(move || {
+        let journal = &app.state::<AppState>().journal;
         let (inp, out) = (PathBuf::from(&input), PathBuf::from(&output));
         if same_file(&inp, &out) {
             return Err("Le fichier chiffré ne peut pas remplacer le fichier d'origine.".into());
@@ -172,7 +269,7 @@ async fn encrypt_file(
             size,
         };
         let mut progress = throttled(on_progress.clone());
-        write_atomically(&out, |w| {
+        write_atomically(journal, &out, |w| {
             v3::encrypt(
                 file,
                 w,
@@ -217,6 +314,7 @@ async fn open_encrypted(
     password: String,
     algorithm: Option<String>,
 ) -> CmdResult<OpenedSummary> {
+    let password = Zeroizing::new(password);
     // Efface la session précédente avant d'en ouvrir une autre
     state.session.lock().map_err(err)?.take();
 
@@ -235,7 +333,7 @@ async fn open_encrypted(
                     session: 0,
                     format: "v3",
                     algorithm: "argon2id + aes-256-gcm",
-                    warnings: vec![],
+                    warnings: core::name_warnings(&opened.meta.name),
                     variants: vec![VariantSummary {
                         label: "Fichier déchiffré".into(),
                         name: core::sanitize_file_name(&opened.meta.name),
@@ -280,7 +378,11 @@ async fn open_encrypted(
     .await?;
 
     let id = state.next_id.fetch_add(1, Ordering::Relaxed) + 1;
-    *state.session.lock().map_err(err)? = Some((id, Arc::new(session)));
+    *state.session.lock().map_err(err)? = Some(SessionSlot {
+        id,
+        session: Arc::new(session),
+        last_used: Instant::now(),
+    });
     Ok(OpenedSummary {
         session: id,
         ..summary
@@ -290,22 +392,33 @@ async fn open_encrypted(
 /// Enregistre une version déchiffrée de la session courante.
 #[tauri::command]
 async fn save_decrypted(
+    app: AppHandle,
     state: State<'_, AppState>,
     session: u64,
     variant: usize,
     output: String,
     on_progress: Channel<u64>,
 ) -> CmdResult<String> {
-    let current = match &*state.session.lock().map_err(err)? {
-        Some((id, s)) if *id == session => s.clone(),
-        _ => return Err("Session expirée : déchiffrez à nouveau le fichier.".into()),
+    let current = match &mut *state.session.lock().map_err(err)? {
+        Some(slot) if slot.id == session => {
+            slot.last_used = Instant::now();
+            slot.session.clone()
+        }
+        _ => {
+            return Err(
+                "Session expirée : saisissez à nouveau la clé et déchiffrez le fichier.".into(),
+            )
+        }
     };
     blocking(move || {
+        let journal = &app.state::<AppState>().journal;
         let out = PathBuf::from(&output);
         match &*current {
             Session::InMemory(d) => {
                 let v = d.variants.get(variant).ok_or("Version inconnue.")?;
-                write_atomically(&out, |w| w.write_all(&v.content).map_err(core::Error::from))?;
+                write_atomically(journal, &out, |w| {
+                    w.write_all(&v.content).map_err(core::Error::from)
+                })?;
             }
             Session::V3 { path, opened } => {
                 if same_file(path, &out) {
@@ -317,7 +430,7 @@ async fn save_decrypted(
                 file.seek(SeekFrom::Start(opened.header.data_offset()))
                     .map_err(err)?;
                 let mut progress = throttled(on_progress.clone());
-                write_atomically(&out, |w| {
+                write_atomically(journal, &out, |w| {
                     opened.decrypt_to(file, w, &mut progress).map(|_| ())
                 })?;
                 let _ = on_progress.send(opened.meta.size);
@@ -403,6 +516,32 @@ pub fn run() {
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
+        .setup(|app| {
+            // Nettoyage des temporaires d'une exécution interrompue
+            if let Ok(dir) = app.path().app_local_data_dir() {
+                let removed = app.state::<AppState>().journal.init(dir.join("temp-files.txt"));
+                if removed > 0 {
+                    eprintln!("Securio : {removed} fichier(s) temporaire(s) d'une exécution interrompue supprimé(s).");
+                }
+            }
+            // Expiration des sessions inactives
+            let handle = app.handle().clone();
+            std::thread::spawn(move || loop {
+                std::thread::sleep(Duration::from_secs(15));
+                let state = handle.state::<AppState>();
+                let expired = match state.session.lock() {
+                    Ok(mut slot) if slot.as_ref().is_some_and(|s| s.last_used.elapsed() > SESSION_TTL) => {
+                        slot.take();
+                        true
+                    }
+                    _ => false,
+                };
+                if expired {
+                    let _ = handle.emit("session-expired", ());
+                }
+            });
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             inspect_file,
             encrypt_file,
@@ -437,7 +576,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("securio-test-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let target = dir.join("out.bin");
-        let r = write_atomically(&target, |w| {
+        let journal = TempJournal::default();
+        let r = write_atomically(&journal, &target, |w| {
             w.write_all(b"partiel").unwrap();
             Err(core::Error::Corrupted("test".into()))
         });
@@ -449,8 +589,45 @@ mod tests {
             "aucun fichier temporaire ne doit rester"
         );
 
-        write_atomically(&target, |w| w.write_all(b"ok").map_err(core::Error::from)).unwrap();
+        write_atomically(&journal, &target, |w| {
+            w.write_all(b"ok").map_err(core::Error::from)
+        })
+        .unwrap();
         assert_eq!(fs::read(&target).unwrap(), b"ok");
+        fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn interrupted_temp_files_are_removed_at_startup() {
+        let dir = std::env::temp_dir().join(format!("securio-journal-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let leftover = dir.join(format!(".secret.pdf.abcdef{TEMP_SUFFIX}"));
+        let foreign = dir.join("document-utilisateur.pdf");
+        fs::write(&leftover, b"debut du fichier dechiffre").unwrap();
+        fs::write(&foreign, b"a garder").unwrap();
+        let journal_file = dir.join("temp-files.txt");
+        TempJournal::save(&journal_file, &[leftover.clone(), foreign.clone()]);
+
+        let journal = TempJournal::default();
+        assert_eq!(journal.init(journal_file.clone()), 1);
+        assert!(
+            !leftover.exists(),
+            "le temporaire orphelin doit être supprimé"
+        );
+        assert!(
+            foreign.exists(),
+            "un fichier qui n'est pas un temporaire Securio ne doit jamais être supprimé"
+        );
+        assert!(TempJournal::entries(&journal_file).is_empty());
+
+        // pendant une écriture, le temporaire est journalisé, puis retiré
+        let target = dir.join("out.bin");
+        write_atomically(&journal, &target, |_| {
+            assert_eq!(TempJournal::entries(&journal_file).len(), 1);
+            Ok(())
+        })
+        .unwrap();
+        assert!(TempJournal::entries(&journal_file).is_empty());
         fs::remove_dir_all(&dir).unwrap();
     }
 
