@@ -15,7 +15,14 @@ Cœur cryptographique en **Rust**, interface **Tauri** (React).
 - 🕶️ Nom et type du fichier d'origine **chiffrés** (et longueur du nom masquée) ; noms piégés
   (caractères invisibles, inversion du sens de lecture) neutralisés, alerte sur les programmes
 - ♻️ **Rétro-compatible** : les fichiers de Securio 1.0 → 1.3 s'ouvrent toujours
-- 🚀 Ouverture directe des `.encrypted` (double-clic) ; une seule fenêtre à la fois
+- 🖱️ **Clic droit dans l'Explorateur** : « Chiffrer avec Securio » (fichiers et dossiers),
+  « Déchiffrer avec Securio » ; double-clic sur un `.encrypted` ; une seule fenêtre à la fois
+- 🗂️ **Plusieurs fichiers ou dossiers** : chiffrés séparément ou regroupés dans une archive
+  chiffrée (dossiers et sous-dossiers), déchiffrement par lot
+- 👁️ **Aperçu sans trace** : images, textes et PDF déchiffrés en mémoire, jamais écrits sur le disque
+- 🎲 **Générateur de phrases de passe** en français (6 mots, 72 bits d'entropie)
+- 🧹 **Suppression de l'original** après chiffrement (vérification complète, écrasement, sans
+  corbeille) ; **conversion** des anciens fichiers v1/v2 au format v3
 - 🪶 Exécutable d'environ 10 Mo (contre ~110 Mo avec Electron)
 - 💾 Aucune donnée ne quitte votre ordinateur, aucune clé n'est stockée
 
@@ -25,8 +32,9 @@ Téléchargez la dernière version depuis la [page des releases](https://github.
 (ou l'artefact « Securio-windows » de l'onglet *Actions*) :
 
 - `Securio_x.y.z_x64-setup.exe` : installeur (sans droits administrateur), associe l'extension
-  `.encrypted` à Securio → **double-clic** sur un fichier chiffré ;
-- `Securio_x.y.z_x64_fr-FR.msi` : installeur MSI (déploiement en entreprise) ;
+  `.encrypted` à Securio (**double-clic**) et ajoute le **clic droit** « Chiffrer / Déchiffrer
+  avec Securio » (sous Windows 11 : « Afficher plus d'options ») ;
+- `Securio_x.y.z_x64_fr-FR.msi` : installeur MSI (déploiement en entreprise ; sans menu clic droit) ;
 - `Securio-x.y.z-portable.exe` : exécutable seul, sans installation.
 
 Securio utilise WebView2, déjà présent sur Windows 10 et 11 (l'installeur le télécharge si besoin).
@@ -41,20 +49,30 @@ gh attestation verify Securio-2.1.0-portable.exe --repo SkY1331/Securio
 
 ## Utilisation
 
-1. **Chiffrer** : glissez-déposez un fichier (ou cliquez sur la zone), saisissez la clé deux fois
-   — **aucune récupération n'est possible en cas d'oubli** — puis « Chiffrer… » et choisissez où
-   enregistrer le `.encrypted`.
-2. **Déchiffrer** : ouvrez un `.encrypted` (glisser-déposer, clic ou double-clic), saisissez la
-   clé, « Déchiffrer », puis « Sauvegarder ».
+Glissez-déposez des fichiers ou des dossiers (ou utilisez « Choisir des fichiers… » /
+« Choisir un dossier… », ou le clic droit de l'Explorateur). Le mode est choisi automatiquement :
 
-Le mode (chiffrer / déchiffrer) est choisi automatiquement selon le fichier. En cas d'erreur
-(clé incorrecte, fichier altéré, disque plein…), aucun fichier partiel n'est laissé : le résultat
-est écrit dans un fichier temporaire, renommé seulement en cas de succès — et si l'application est
-interrompue en plein travail, le temporaire est supprimé à son démarrage suivant.
+| Sélection | Action |
+|---|---|
+| Un fichier ordinaire | Chiffrement vers `nom.encrypted` (emplacement au choix) |
+| Plusieurs fichiers | Chiffrement de chacun à côté de son original, **ou** archive chiffrée unique |
+| Dossier(s) | Archive chiffrée `Dossier.tar.encrypted` (sous-dossiers compris) |
+| Un `.encrypted` | Vérification de la clé, puis **Aperçu**, **Sauvegarder** ou, pour une archive, **Extraire dans un dossier** |
+| Plusieurs `.encrypted` | Déchiffrement de tous dans un dossier au choix (archives extraites) |
 
-⚠️ Après chiffrement, **le fichier d'origine reste sur le disque** : supprimez-le vous-même si
-nécessaire (sur SSD, un fichier supprimé peut rester récupérable : chiffrez de préférence vos
-documents dès leur création, ou travaillez sur un disque chiffré type BitLocker).
+- **Clé** : saisissez-la deux fois, ou cliquez sur « Générer une phrase de passe ». Les clés trop
+  faciles à deviner sont refusées. **Aucune récupération n'est possible en cas d'oubli.**
+- **Supprimer l'original** (case à cocher) : le fichier chiffré est d'abord relu entièrement, puis
+  l'original est écrasé et supprimé définitivement (sans corbeille). Sur SSD ou clé USB, des
+  traces peuvent subsister sur le support : seul un disque chiffré (BitLocker) l'exclut. Les
+  dossiers d'origine ne sont jamais supprimés automatiquement.
+- **Aperçu** : images, textes (affichés bruts, jamais interprétés) et PDF jusqu'à 64 Mo, déchiffrés
+  uniquement en mémoire.
+- En cas d'erreur (clé incorrecte, fichier altéré, disque plein…), aucun fichier partiel n'est
+  laissé ; si l'application est interrompue en plein travail, les temporaires sont supprimés au
+  démarrage suivant.
+
+⚠️ Sans l'option de suppression, **le fichier d'origine reste sur le disque** après chiffrement.
 
 ### Anciens fichiers
 
@@ -63,6 +81,10 @@ documents dès leur création, ou travaillez sur un disque chiffré type BitLock
 | Securio 2.0 et + | v3 | natif |
 | Securio 1.3 | v2 | identique |
 | Securio 1.0 → 1.2.1 | v1 | mode compatibilité, algorithme AES-128/192/256 détecté automatiquement |
+
+Un fichier v1 ou v2 ouvert peut être **converti au format v3** (bouton « Convertir au format
+v3… ») : enregistré à la place de l'ancien, celui-ci n'est remplacé qu'une fois le nouveau
+entièrement écrit et vérifié.
 
 Les versions ≤ 1.2.1 lisaient certains fichiers de façon incorrecte avant de les chiffrer.
 Securio les répare au déchiffrement, tout en laissant toujours la possibilité d'enregistrer le
@@ -107,6 +129,13 @@ espaces à un multiple de 256 octets. Segments 1 et suivants : le fichier ; le d
 Les paramètres sont enregistrés dans chaque fichier : une version future pourra les durcir sans
 casser la lecture des fichiers existants.
 
+**Archives** (dossiers, sélections multiples) : le contenu chiffré est une archive `tar` standard
+(type `application/x-tar` dans les métadonnées), produite et chiffrée à la volée, sans copie en
+clair sur le disque. Une archive déchiffrée et enregistrée telle quelle s'ouvre partout
+(`tar -xf` est intégré à Windows 10+). Liens symboliques et fichiers spéciaux ne sont jamais
+archivés ni extraits ; à l'extraction, les chemins absolus ou remontant hors du dossier (`..`) sont
+refusés et les noms nettoyés.
+
 ### v2 (Securio 1.3, lecture seule)
 
 `SECURIO` · version `2` · PBKDF2-HMAC-SHA256 (itérations dans l'en-tête, 600 000) · AES-256-GCM
@@ -122,7 +151,7 @@ Détails : [`crates/securio-core/src/v1.rs`](crates/securio-core/src/v1.rs).
 ## Sécurité
 
 - Toute la cryptographie est en Rust ([RustCrypto](https://github.com/RustCrypto)) ; l'interface
-  ne voit jamais le contenu des fichiers, seulement leurs chemins
+  ne voit que des chemins de fichiers, sauf pour l'aperçu (contenu transmis en mémoire)
 - Clés, mots de passe et contenus déchiffrés effacés de la mémoire après usage (`zeroize`) ; la
   clé n'est plus conservée par l'interface une fois le fichier ouvert ; session effacée après
   5 minutes d'inactivité
@@ -157,7 +186,12 @@ src-tauri/             application Tauri (commandes, fenêtres, installeurs)
 src/                   interface React
 test/fixtures/         fichiers témoins v1, v2, v3
 test/legacy/           code JavaScript d'origine (1.2.1) qui a généré les témoins v1
+tools/                 construction de la liste de mots du générateur de phrases de passe
 ```
+
+La liste de mots (`crates/securio-core/src/wordlist_fr.txt`) est dérivée de la liste de
+fréquences françaises de [zxcvbn-ts](https://github.com/zxcvbn-ts/zxcvbn) (licence MIT) par
+`node tools/build-wordlist.mjs`.
 
 ### Rétro-compatibilité : règle d'or
 

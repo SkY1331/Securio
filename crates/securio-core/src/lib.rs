@@ -7,12 +7,15 @@
 //! La rétro-compatibilité est vérifiée par les fichiers témoins de
 //! `test/fixtures/` (générés par les anciennes versions), voir `tests/`.
 
+pub mod archive;
 mod error;
 pub mod names;
+pub mod passphrase;
 pub mod repair;
 pub mod v1;
 pub mod v2;
 pub mod v3;
+pub mod wipe;
 
 pub use error::{Error, Result};
 pub use names::{name_from_encrypted_name, name_warnings, risky_extension, sanitize_file_name};
