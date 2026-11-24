@@ -47,7 +47,7 @@ pub fn unique_path(dir: &Path, name: &str) -> PathBuf {
 
 fn random_suffix() -> CmdResult<String> {
     let mut rnd = [0u8; 6];
-    getrandom::getrandom(&mut rnd).map_err(err)?;
+    getrandom::fill(&mut rnd).map_err(err)?;
     Ok(rnd.iter().map(|b| format!("{b:02x}")).collect())
 }
 

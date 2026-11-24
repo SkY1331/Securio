@@ -1,7 +1,7 @@
 {
   "name": "securio",
   "private": true,
-  "version": "2.2.0",
+  "version": "2.2.1",
   "type": "module",
   "description": "Une application sécurisée pour chiffrer et déchiffrer vos fichiers sensibles",
   "author": "SkY1331",
