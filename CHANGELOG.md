@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.2.1] - 2026-11-24
+
+### Modifié
+- Bibliothèques de chiffrement RustCrypto mises à jour (aes 0.9, aes-gcm 0.11, argon2 0.6,
+  cbc 0.2, pbkdf2 0.13, sha2 0.11, getrandom 0.4) ; rétro-compatibilité vérifiée sur tous les
+  fichiers témoins v1, v2 et v3
+- **Argon2id calculé en parallèle** (4 voies) : dérivation de clé environ 1,5× plus rapide sur
+  2 cœurs, davantage sur un processeur récent — même sécurité, mêmes fichiers
+- Dependabot ignore les versions majeures de Tailwind et ESLint (migrations à faire à la main)
+
 ## [2.2.0] - 2026-11-23
 
 ### Ajouté

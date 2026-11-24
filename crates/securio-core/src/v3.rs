@@ -66,7 +66,7 @@ pub struct Params {
 
 impl Default for Params {
     /// Argon2id, 256 Mio, t = 3, p = 4 (RFC 9106 recommande au moins 64 Mio ;
-    /// 256 Mio coûtent ~0,7 s sur un processeur modeste et quadruplent le coût
+    /// 256 Mio coûtent ~0,45 s sur 2 cœurs — les 4 voies sont calculées en parallèle — et quadruplent le coût
     /// d'une attaque par force brute). Segments de 1 Mio.
     ///
     /// Securio 2.0 utilisait 64 Mio : ces fichiers restent lisibles, les
@@ -213,7 +213,7 @@ fn read_full<R: Read>(r: &mut R, buf: &mut [u8]) -> std::io::Result<usize> {
 
 fn random<const N: usize>() -> Result<[u8; N]> {
     let mut b = [0u8; N];
-    getrandom::getrandom(&mut b).map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
+    getrandom::fill(&mut b).map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
     Ok(b)
 }
 
@@ -270,7 +270,7 @@ pub fn encrypt<R: Read, W: Write>(
     let seal = |counter: u32, last: bool, msg: &[u8]| -> Result<Vec<u8>> {
         cipher
             .encrypt(
-                Nonce::from_slice(&nonce(&prefix, counter, last)),
+                &Nonce::from(nonce(&prefix, counter, last)),
                 Payload { msg, aad: &header },
             )
             .map_err(|_| Error::Invalid("échec du chiffrement".into()))
@@ -351,7 +351,7 @@ pub fn open<R: Read>(input: &mut R, password: &str) -> Result<Opened> {
     let meta_plain = Zeroizing::new(
         cipher
             .decrypt(
-                Nonce::from_slice(&nonce(&header.nonce_prefix, 0, false)),
+                &Nonce::from(nonce(&header.nonce_prefix, 0, false)),
                 Payload {
                     msg: &meta_ct,
                     aad: &header.raw,
@@ -391,7 +391,7 @@ impl Opened {
             let last = n < seg_ct || reader.fill_buf()?.is_empty();
             let mut plain = cipher
                 .decrypt(
-                    Nonce::from_slice(&nonce(&self.header.nonce_prefix, counter, last)),
+                    &Nonce::from(nonce(&self.header.nonce_prefix, counter, last)),
                     Payload {
                         msg: &buf[..n],
                         aad: &self.header.raw,

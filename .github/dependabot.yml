@@ -11,6 +11,14 @@ updates:
     directory: /
     schedule:
       interval: weekly
+    # Versions majeures demandant une migration de configuration : traitées à la main
+    ignore:
+      - dependency-name: tailwindcss
+        update-types: ['version-update:semver-major']
+      - dependency-name: eslint
+        update-types: ['version-update:semver-major']
+      - dependency-name: '@eslint/js'
+        update-types: ['version-update:semver-major']
     groups:
       npm:
         patterns: ['*']

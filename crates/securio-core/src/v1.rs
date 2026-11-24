@@ -16,7 +16,7 @@
 //! choisi à l'époque — qui n'est PAS enregistré dans le fichier.
 
 use crate::{Error, Result};
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, KeyIvInit};
+use cbc::cipher::{block_padding::Pkcs7, BlockModeDecrypt, KeyIvInit};
 use serde::Serialize;
 use zeroize::{Zeroize, Zeroizing};
 
@@ -80,15 +80,15 @@ fn cbc_decrypt(key: &[u8], iv: &[u8], ct: &[u8]) -> Option<Vec<u8>> {
     match key.len() {
         32 => cbc::Decryptor::<aes::Aes256>::new_from_slices(key, iv)
             .ok()?
-            .decrypt_padded_vec_mut::<Pkcs7>(ct)
+            .decrypt_padded_vec::<Pkcs7>(ct)
             .ok(),
         24 => cbc::Decryptor::<aes::Aes192>::new_from_slices(key, iv)
             .ok()?
-            .decrypt_padded_vec_mut::<Pkcs7>(ct)
+            .decrypt_padded_vec::<Pkcs7>(ct)
             .ok(),
         16 => cbc::Decryptor::<aes::Aes128>::new_from_slices(key, iv)
             .ok()?
-            .decrypt_padded_vec_mut::<Pkcs7>(ct)
+            .decrypt_padded_vec::<Pkcs7>(ct)
             .ok(),
         _ => None,
     }

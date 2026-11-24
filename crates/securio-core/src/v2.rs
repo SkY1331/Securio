@@ -86,7 +86,7 @@ pub fn decrypt(
     let plain = Zeroizing::new(
         cipher
             .decrypt(
-                Nonce::from_slice(iv),
+                &Nonce::try_from(iv).map_err(|_| Error::Invalid("IV incorrect".into()))?,
                 Payload {
                     msg: &bytes[info.header_length..],
                     aad: header,

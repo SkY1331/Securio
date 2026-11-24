@@ -34,8 +34,7 @@ pub fn generate(n: usize) -> Result<Zeroizing<String>> {
     let list = words();
     debug_assert_eq!(list.len(), WORD_COUNT);
     let mut random = Zeroizing::new(vec![0u8; 2 * n]);
-    getrandom::getrandom(&mut random)
-        .map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
+    getrandom::fill(&mut random).map_err(|e| Error::Io(std::io::Error::other(e.to_string())))?;
     let mut out = Zeroizing::new(String::new());
     for i in 0..n {
         // 4 096 = 2^12 : le masque donne un tirage parfaitement uniforme
